@@ -58,6 +58,7 @@ Then edit `.env`:
 | `GEMMA_MODEL` | Model id, default `gemma-4-26b-a4b-it` |
 | `DISCOVERY_PIPELINE` | `combined` (default, one multimodal call) or `two_stage` |
 | `DATABASE_URL` | SQLAlchemy URL; SQLite for the MVP |
+| `SQLITE_JOURNAL_MODE` | `WAL` by default; the app continues if it cannot be set |
 | `UPLOAD_DIR` | Where uploaded photographs are stored |
 | `MAX_IMAGE_BYTES` | Upload cap, default 10 MB |
 | `CORS_ORIGINS` | Comma-separated frontend origins |

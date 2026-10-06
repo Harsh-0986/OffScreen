@@ -10,7 +10,9 @@ starts changing in production.
 from __future__ import annotations
 
 import logging
+import sqlite3
 from collections.abc import Iterator
+from functools import lru_cache
 from pathlib import Path
 
 from sqlalchemy import create_engine, event
@@ -22,6 +24,16 @@ from app.config import get_settings
 from app.db.base import Base
 
 logger = logging.getLogger(__name__)
+
+
+@lru_cache(maxsize=1)
+def _journal_mode_ready() -> bool:
+    """Whether the journal mode has already been set on this database.
+
+    Attempting it once per process is enough: it is persistent state, so every
+    later connection can skip the attempt entirely.
+    """
+    return False
 
 
 def _build_engine() -> Engine:
@@ -41,9 +53,33 @@ def _build_engine() -> Engine:
         @event.listens_for(engine, "connect")
         def _set_sqlite_pragma(dbapi_connection, _record):  # pragma: no cover - driver callback
             cursor = dbapi_connection.cursor()
-            cursor.execute("PRAGMA foreign_keys=ON")
-            cursor.execute("PRAGMA journal_mode=WAL")
-            cursor.close()
+            try:
+                # These are per-connection and safe to set every time.
+                cursor.execute("PRAGMA foreign_keys=ON")
+                # Wait for a competing writer instead of failing immediately:
+                # `uvicorn --reload` and any second process share this file.
+                cursor.execute(f"PRAGMA busy_timeout={settings.sqlite_busy_timeout_ms}")
+
+                # journal_mode is a property of the *database*, not the connection,
+                # and changing it needs an exclusive lock. If another process holds
+                # the file (a running server, a stale -wal) this fails, and retrying
+                # with a different mode would fail the same way. So: try once, and
+                # carry on in whatever mode the database is already using.
+                if not _journal_mode_ready():
+                    try:
+                        cursor.execute(f"PRAGMA journal_mode={settings.sqlite_journal_mode}")
+                        _journal_mode_ready.cache_clear()
+                        logger.info("SQLite journal_mode=%s", settings.sqlite_journal_mode)
+                    except sqlite3.OperationalError as exc:
+                        logger.warning(
+                            "Could not set SQLite journal_mode=%s (%s); continuing in the "
+                            "existing mode. Stop other processes using the database to change it.",
+                            settings.sqlite_journal_mode,
+                            exc,
+                        )
+                        _journal_mode_ready.cache_clear()
+            finally:
+                cursor.close()
 
         return engine
 

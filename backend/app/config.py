@@ -1,5 +1,6 @@
 """Application settings, loaded from environment variables / .env file."""
 
+import os
 from functools import lru_cache
 from pathlib import Path
 
@@ -30,6 +31,10 @@ class Settings(BaseSettings):
 
     # Storage / DB
     database_url: str = "sqlite:///./outside.db"
+    # WAL is faster but unavailable on some volumes and with stale -wal/-shm
+    # files; the app falls back automatically. Set to "DELETE" to skip it.
+    sqlite_journal_mode: str = os.environ.get("SQLITE_JOURNAL_MODE", "WAL")
+    sqlite_busy_timeout_ms: int = 5000
     upload_dir: str = "uploads"
     max_image_bytes: int = 10 * 1024 * 1024
 
