@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from datetime import date
 from typing import Any
 
 from langgraph.graph import END, START, StateGraph
@@ -20,6 +21,7 @@ from langgraph.graph import END, START, StateGraph
 from app.errors import GemmaError
 from app.graph import nodes
 from app.graph.state import DiscoveryState
+from app.services.personalization import daily_seed
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +32,7 @@ def build_challenge_graph(
     load_profile: Callable[[str], dict[str, Any]] | None = None,
     load_history: Callable[[str], list[str]] | None = None,
     load_discoveries: Callable[[str], list[str]] | None = None,
+    select_category: Callable[..., tuple[str, str]] | None = None,
 ):
     """START -> load_context -> generate_challenge -> END."""
 
@@ -42,7 +45,13 @@ def build_challenge_graph(
         )
 
     async def _generate_challenge(state: DiscoveryState) -> dict[str, Any]:
-        return nodes.generate_challenge(state, service=service)
+        # Seeded per user per day so /today is stable across refreshes.
+        seed = daily_seed(
+            state.get("user_id", ""), state.get("context_date") or date.today().isoformat()
+        )
+        return nodes.generate_challenge(
+            state, service=service, seed=seed, select_category=select_category
+        )
 
     builder = StateGraph(DiscoveryState)
     builder.add_node("load_context", _load_context)

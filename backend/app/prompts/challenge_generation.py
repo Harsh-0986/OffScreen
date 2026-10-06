@@ -43,6 +43,8 @@ Discoveries they have already made (use for flavour only):
 
 {freshness_hint}
 
+{category_hint}
+
 Return JSON with this exact shape:
 {{
   "title": "short evocative name, max 5 words",
@@ -57,16 +59,28 @@ Return JSON with this exact shape:
 def build_user_prompt(context: dict[str, Any]) -> str:
     """Render the challenge prompt from the user's history.
 
-    `context` mirrors the payload described in SPEC §10.
+    `context` mirrors the payload described in SPEC §10. When
+    `context["target_category"]` is set the model is constrained to it, which is
+    how deterministic personalization works (SPEC §17).
     """
     profile = context.get("user_profile") or {}
     recent_challenges = context.get("recent_challenges") or []
     recent_discoveries = context.get("recent_discoveries") or []
+    target = context.get("target_category")
 
     if recent_challenges:
         freshness_hint = "Make this noticeably different in angle from the ones above."
     else:
         freshness_hint = "This is their first challenge — make it inviting and easy to win."
+
+    if target:
+        category_hint = (
+            f'The category has already been chosen for this challenge: "{target}".\n'
+            f'Your "category" field MUST be exactly "{target}". '
+            "Invent the concept yourself."
+        )
+    else:
+        category_hint = ""
 
     return USER_PROMPT_TEMPLATE.format(
         display_name=profile.get("display_name") or "a curious human",
@@ -76,6 +90,7 @@ def build_user_prompt(context: dict[str, Any]) -> str:
         recent_challenges=_bullets(recent_challenges) or "(none yet)",
         recent_discoveries=_bullets(recent_discoveries) or "(none yet)",
         freshness_hint=freshness_hint,
+        category_hint=category_hint,
     )
 
 

@@ -440,3 +440,25 @@ def test_profile_reflects_discoveries(client, db) -> None:
     assert body["total_points"] == 9
     assert body["discoveries_count"] == 1
     assert body["favorite_categories"] == {"nature": 1.0}
+
+
+def test_profile_name_can_be_set(client) -> None:
+    response = client.patch(
+        "/api/profile", json={"display_name": "Harsh"}, headers={"X-User-Id": USER}
+    )
+    assert response.status_code == 200
+    assert response.json()["display_name"] == "Harsh"
+    fetched = client.get("/api/profile", headers={"X-User-Id": USER}).json()
+    assert fetched["display_name"] == "Harsh"
+
+
+def test_profile_name_is_required(client) -> None:
+    response = client.patch("/api/profile", json={}, headers={"X-User-Id": USER})
+    assert response.status_code == 422
+
+
+def test_profile_name_is_length_capped(client) -> None:
+    response = client.patch(
+        "/api/profile", json={"display_name": "x" * 200}, headers={"X-User-Id": USER}
+    )
+    assert response.status_code == 422

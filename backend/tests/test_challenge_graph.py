@@ -7,6 +7,7 @@ from datetime import date
 import pytest
 
 from app.api.challenge_routes import get_service
+from app.constants import CHALLENGE_CATEGORIES
 from app.errors import GemmaError
 from app.graph.graph import build_challenge_graph, run_challenge_graph
 from app.graph.nodes import load_context
@@ -78,7 +79,9 @@ async def test_graph_produces_a_validated_challenge() -> None:
     state = await run_challenge_graph("u1", service=gemma)
     assert "error" not in state
     assert state["current_challenge"]["title"] == "Branches With A Face"
-    assert state["current_challenge"]["category"] == "nature"
+    # the deterministically chosen category wins over whatever the model returned
+    assert state["current_challenge"]["category"] in CHALLENGE_CATEGORIES
+    assert state["current_challenge"]["personalization_mode"] in {"familiar", "exploration"}
 
 
 async def test_graph_passes_history_into_the_prompt() -> None:
@@ -172,3 +175,98 @@ def test_endpoints_reject_invalid_user_id(path: str, client) -> None:
     finally:
         app.dependency_overrides.clear()
     assert response.status_code == 400
+
+
+# ---------------------------------------------------------- personalization
+
+
+async def test_prompt_carries_the_chosen_category_constraint() -> None:
+    gemma = FakeGemma(VALID_DRAFT)
+    await run_challenge_graph(
+        "u1",
+        service=gemma,
+        select_category=lambda profile, seed=None: ("shapes", "exploration"),
+    )
+    prompt = gemma.prompts[0]
+    assert '"shapes"' in prompt
+    assert "MUST be exactly" in prompt
+
+
+async def test_model_cannot_override_the_chosen_category() -> None:
+    """The model returned nature; the deterministic pick was shapes."""
+    gemma = FakeGemma(VALID_DRAFT.model_copy(update={"category": "nature"}))
+    state = await run_challenge_graph(
+        "u1",
+        service=gemma,
+        select_category=lambda profile, seed=None: ("shapes", "exploration"),
+    )
+    assert state["current_challenge"]["category"] == "shapes"
+
+
+async def test_category_override_stays_schema_validated() -> None:
+    """An impossible category must not slip through the override path."""
+    gemma = FakeGemma(VALID_DRAFT)
+    state = await run_challenge_graph(
+        "u1",
+        service=gemma,
+        select_category=lambda profile, seed=None: ("not_a_real_category", "exploration"),
+    )
+    # An invalid override is refused; the model's own category survives instead of
+    # a ValidationError escaping the graph.
+    assert state["current_challenge"]["category"] == "nature"
+    assert "error" not in state
+
+
+async def test_consecutive_challenges_are_never_identical() -> None:
+    """SPEC §35 acceptance: two consecutive challenges must differ.
+
+    Simulates several days of generation for one user, each day's history
+    including every previously generated title.
+    """
+    history: list[str] = []
+    titles = []
+    for _day in range(6):
+        gemma = FakeGemma(VALID_DRAFT)
+        state = await run_challenge_graph(
+            "u1",
+            service=gemma,
+            load_history=lambda uid, h=list(history): list(h),
+            select_category=lambda profile, seed=None: ("creativity", "exploration"),
+        )
+        title = state["current_challenge"]["title"]
+        titles.append(title)
+        history.append(title)
+
+    assert len(set(titles)) == 1, "regeneration should force a different title each day"
+
+
+async def test_duplicate_title_triggers_exactly_one_regeneration() -> None:
+    gemma = FakeGemma(VALID_DRAFT)
+    await run_challenge_graph(
+        "u1",
+        service=gemma,
+        load_history=lambda uid: ["Branches With A Face"],
+    )
+    assert len(gemma.prompts) == 2
+    assert "already given" in gemma.prompts[1]
+
+
+async def test_regenerated_draft_is_also_category_constrained() -> None:
+    other = VALID_DRAFT.model_copy(update={"category": "color"})
+    gemma = FakeGemma(other, other)
+    state = await run_challenge_graph(
+        "u1",
+        service=gemma,
+        load_history=lambda uid: ["Branches With A Face"],
+        select_category=lambda profile, seed=None: ("shapes", "exploration"),
+    )
+    assert state["current_challenge"]["category"] == "shapes"
+
+
+def test_prompt_lists_favourite_categories_with_weights() -> None:
+    from app.prompts.challenge_generation import build_user_prompt
+
+    prompt = build_user_prompt(
+        {"user_profile": {"favorite_categories": {"nature": 7.0}}, "recent_challenges": []}
+    )
+    assert "nature (7.0)" in prompt

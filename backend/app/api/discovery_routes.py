@@ -19,6 +19,7 @@ from app.schemas.discovery import (
     DiscoveryResponse,
     JournalResponse,
     ProfileResponse,
+    ProfileUpdate,
 )
 from app.services.gemma import GemmaService, get_gemma_service
 from app.services.images import store_image, validate_upload
@@ -89,6 +90,18 @@ async def journal(
 ) -> JournalResponse:
     rows = repo.list_discoveries(db, user_id, limit=min(limit, 100), offset=offset)
     return JournalResponse(discoveries=[_to_schema(r) for r in rows], total=len(rows))
+
+
+@router.patch("/profile", response_model=ProfileResponse)
+async def update_profile(user_id: UserId, db: Db, body: ProfileUpdate) -> ProfileResponse:
+    """Set the display name.
+
+    The MVP has no accounts (SPEC §3); this only lets someone put a name on the
+    profile they already have.
+    """
+    repo.get_or_create_user(db, user_id)
+    repo.set_display_name(db, user_id, body.display_name)
+    return ProfileResponse(**repo.get_user_profile(db, user_id))
 
 
 @router.get("/profile", response_model=ProfileResponse)

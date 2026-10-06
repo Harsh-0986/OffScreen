@@ -45,3 +45,7 @@ class ProfileResponse(BaseModel):
     completed_challenges: int = 0
     outdoor_minutes_estimate: int = 0
     favorite_categories: dict[str, float] = Field(default_factory=dict)
+
+
+class ProfileUpdate(BaseModel):
+    display_name: str = Field(min_length=1, max_length=80)

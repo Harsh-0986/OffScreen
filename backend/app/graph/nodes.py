@@ -13,12 +13,12 @@ from collections.abc import Callable
 from datetime import date
 from typing import Any
 
+from app.constants import CHALLENGE_CATEGORIES
 from app.prompts import (
     challenge_generation,
     discovery_evaluation,
     discovery_judgment,
     feedback,
-    personalization,
     photo_analysis,
 )
 from app.schemas.ai import (
@@ -29,6 +29,12 @@ from app.schemas.ai import (
     PhotoAnalysis,
 )
 from app.services.gemma import GemmaService, get_gemma_service
+from app.services.personalization import (
+    describe_choice as personalization_describe_choice,
+)
+from app.services.personalization import (
+    select_category as personalization_select_category,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -72,24 +78,33 @@ def generate_challenge(
     state: dict[str, Any],
     *,
     service: GemmaService | None = None,
+    select_category: Callable[..., tuple[str, str]] | None = None,
+    seed: int | None = None,
 ) -> dict[str, Any]:
     """Ask Gemma for today's challenge and validate it.
+
+    The category is chosen deterministically first (SPEC §17, ~60% familiar /
+    ~40% exploration) and passed as a constraint, so the split is measurable
+    rather than a suggestion the model may ignore.
 
     A duplicated or near-duplicate of a previous challenge is rejected and
     regenerated once (SPEC §35: two consecutive challenges must not be identical).
     """
     gemma = service or get_gemma_service()
+    profile = state.get("user_profile", {})
+    today = state.get("context_date") or date.today().isoformat()
+
+    picker = select_category or personalization_select_category
+    category, mode = picker(profile, seed=seed)
+    category_note = personalization_describe_choice(profile, category, mode)
 
     context = {
-        "user_profile": state.get("user_profile", {}),
-        "explored_categories": sorted(
-            (state.get("user_profile", {}).get("favorite_categories") or {}).keys()
-            if isinstance(state.get("user_profile", {}).get("favorite_categories"), dict)
-            else (state.get("user_profile", {}).get("favorite_categories") or [])
-        ),
+        "user_profile": profile,
+        "explored_categories": _favorite_names(profile),
         "recent_challenges": state.get("challenge_history", []),
         "recent_discoveries": state.get("recent_discoveries", []),
-        "today": state.get("context_date") or date.today().isoformat(),
+        "today": today,
+        "target_category": category,
     }
 
     draft = gemma.generate_structured(
@@ -97,6 +112,12 @@ def generate_challenge(
         ChallengeDraft,
         system=challenge_generation.SYSTEM_PROMPT,
     )
+
+    # The model may still ignore the constraint; fall back to the chosen category
+    # rather than rejecting an otherwise valid challenge.
+    if draft.category != category:
+        logger.info("Model returned category %s; keeping requested %s", draft.category, category)
+        draft = _with_category(draft, category)
 
     seen = [t.strip().lower() for t in state.get("challenge_history", []) if t]
     if draft.title.strip().lower() in seen:
@@ -108,15 +129,35 @@ def generate_challenge(
             ChallengeDraft,
             system=challenge_generation.SYSTEM_PROMPT,
         )
+        if draft.category != category:
+            draft = _with_category(draft, category)
 
     return {
         "current_challenge": {
             **draft.model_dump(),
-            "personalization_note": personalization.describe_preferences(
-                state.get("user_profile", {})
-            ),
+            "personalization_note": category_note,
+            "personalization_mode": mode,
         }
     }
+
+
+def _with_category(draft: ChallengeDraft, category: str) -> ChallengeDraft:
+    """Apply the chosen category, re-validating rather than skipping validation.
+
+    If the chosen category is somehow invalid, keep the model's own rather than
+    raising out of the graph — a bad category is not worth a failed request.
+    """
+    if category not in CHALLENGE_CATEGORIES:
+        logger.error("Refusing to override with invalid category %r", category)
+        return draft
+    return ChallengeDraft.model_validate({**draft.model_dump(), "category": category})
+
+
+def _favorite_names(profile: dict[str, Any]) -> list[str]:
+    favorites = profile.get("favorite_categories") or {}
+    if isinstance(favorites, dict):
+        return sorted(favorites)
+    return sorted(favorites)
 
 
 # --------------------------------------------------------- discovery nodes
