@@ -29,6 +29,12 @@ class ImageValidationError(AppError):
     status_code = 400
 
 
+class InvalidIdentityError(AppError):
+    """The supplied user identifier is not a valid UUID."""
+
+    status_code = 400
+
+
 class NotFoundError(AppError):
     """Requested resource does not exist."""
 
