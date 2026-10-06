@@ -156,6 +156,51 @@ def test_structured_falls_back_to_plain_call() -> None:
     assert draft.prompt == "B"
 
 
+def test_schema_hint_lists_keys_and_enum() -> None:
+    from app.services.gemma import _schema_hint
+
+    hint = _schema_hint(ChallengeDraft)
+    assert '"title"' in hint
+    assert '"difficulty"' in hint
+    assert '"color"' in hint  # rendered from the enum
+
+
+def test_repairs_a_bad_response_then_succeeds() -> None:
+    """A schema violation earns exactly one repair attempt."""
+    good = {
+        "title": "A",
+        "prompt": "B",
+        "category": "color",
+        "difficulty": 1,
+        "estimated_minutes": 10,
+    }
+    client = FakeClient(lambda call: {"title": "A", "mystery": 1} if call == 1 else good)
+    draft = GemmaService(client=client, max_retries=0).generate_structured("p", ChallengeDraft)
+    assert draft.category == "color"
+    assert client.calls == 2
+
+
+def test_gives_up_after_repair_attempts() -> None:
+    client = FakeClient(lambda call: {"title": "A", "mystery": 1})
+    with pytest.raises(SchemaValidationError):
+        GemmaService(client=client, max_retries=0).generate_structured("p", ChallengeDraft)
+    assert client.calls == 2  # original + one repair
+
+
+def test_tooling_mode_uses_structured_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("app.services.gemma.STRUCTURED_OUTPUT_MODE", "tooling")
+    good = {
+        "title": "A",
+        "prompt": "B",
+        "category": "color",
+        "difficulty": 1,
+        "estimated_minutes": 10,
+    }
+    client = FakeClient(good)
+    draft = GemmaService(client=client, max_retries=0).generate_structured("p", ChallengeDraft)
+    assert draft.title == "A"
+
+
 def test_image_input_uses_inline_data_url() -> None:
     """The structured runner receives a text part plus an inline data-URL image."""
     payload = {
@@ -169,8 +214,11 @@ def test_image_input_uses_inline_data_url() -> None:
     service = GemmaService(client=client, max_retries=0)
     service.generate_structured_from_image("prompt", b"bytes", "image/png", ChallengeDraft)
 
-    messages = client.counter["messages"][-1]
-    content = messages[-1].content
+    # the multimodal message is the one carrying list content
+    messages = next(
+        m for batch in client.counter["messages"] for m in batch if isinstance(m.content, list)
+    )
+    content = messages.content
     assert content[0]["type"] == "text"
     assert content[1]["image_url"].startswith("data:image/png;base64,")
 

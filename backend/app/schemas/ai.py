@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.constants import CHALLENGE_CATEGORIES
+
 
 class HealthResponse(BaseModel):
     status: str
@@ -24,15 +26,17 @@ class ChallengeDraft(BaseModel):
 
     title: str = Field(min_length=1, max_length=80)
     prompt: str = Field(min_length=1, max_length=400)
-    category: str = Field(min_length=1, max_length=40)
+    category: str = Field(
+        min_length=1,
+        max_length=40,
+        json_schema_extra={"enum": sorted(CHALLENGE_CATEGORIES)},
+    )
     difficulty: int = Field(ge=1, le=4)
     estimated_minutes: int = Field(ge=5, le=120)
 
     @field_validator("category")
     @classmethod
     def known_category(cls, value: str) -> str:
-        from app.constants import CHALLENGE_CATEGORIES
-
         normalized = value.strip().lower()
         if normalized not in CHALLENGE_CATEGORIES:
             raise ValueError(f"category must be one of {sorted(CHALLENGE_CATEGORIES)}")

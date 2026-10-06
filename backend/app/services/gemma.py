@@ -37,6 +37,17 @@ DEFAULT_TIMEOUT = 60
 DEFAULT_RETRIES = 2
 RETRY_BASE_DELAY = float(os.environ.get("GEMMA_RETRY_BASE_DELAY", "1.5"))
 
+# How structured output is obtained.
+#   "prompt"  -> describe the schema in the prompt, parse + validate locally (default)
+#   "tooling" -> use the provider's with_structured_output / function calling
+# Gemma on the Gemini API frequently ignores the function schema and returns its
+# own key names, so the prompt path is the default. Flip this if a model is
+# verified to honour the schema.
+STRUCTURED_OUTPUT_MODE = os.environ.get("GEMMA_STRUCTURED_OUTPUT_MODE", "prompt")
+
+# One extra attempt is spent asking the model to fix its own schema violation.
+MAX_REPAIR_ATTEMPTS = 1
+
 ALLOWED_IMAGE_MIME_TYPES = ("image/jpeg", "image/png", "image/webp")
 
 # Substrings that identify a provider-side safety block.
@@ -133,17 +144,11 @@ class GemmaService:
         """Return a Pydantic-validated object.
 
         The model output is never trusted: whatever the provider returns is run
-        through `schema.model_validate` before it leaves this function.
+        through `schema.model_validate` before it leaves this function. If the
+        model ignores the required shape, it is asked once to repair its answer.
         """
-        messages = _build_messages(prompt, system)
-        try:
-            raw = self._invoke(messages, structured=schema)
-        except GemmaError:
-            # Some providers/model sizes do not support tool-based structured
-            # output; fall back to instructed JSON + local validation.
-            raw = self._invoke(messages, force_json=True)
-
-        return _coerce(raw, schema)
+        messages = _build_messages(self._with_schema(prompt, schema), system)
+        return self._structured_with_repair(messages, schema)
 
     # ----------------------------------------------------------------- images
 
@@ -162,20 +167,57 @@ class GemmaService:
 
         message = HumanMessage(
             content=[
-                {"type": "text", "text": prompt},
+                {"type": "text", "text": self._with_schema(prompt, schema)},
                 _image_part(image_bytes, mime_type),
             ]
         )
         messages: list[Any] = ([SystemMessage(content=system)] if system else []) + [message]
-
-        try:
-            raw = self._invoke(messages, structured=schema)
-        except GemmaError:
-            raw = self._invoke(messages, force_json=True)
-
-        return _coerce(raw, schema)
+        return self._structured_with_repair(messages, schema)
 
     # --------------------------------------------------------------- internal
+
+    def _with_schema(self, prompt: str, schema: type[BaseModel]) -> str:
+        """Append an explicit JSON contract to the prompt."""
+        return (
+            f"{prompt}\n\n"
+            "Respond with a single JSON object and nothing else. No prose, no code fences.\n"
+            "It must match this shape exactly, using these key names:\n"
+            f"{_schema_hint(schema)}"
+        )
+
+    def _structured_with_repair(self, messages: list[Any], schema: type[T]) -> T:
+        """Invoke the model and validate the result, allowing one self-repair."""
+        use_tooling = STRUCTURED_OUTPUT_MODE == "tooling"
+
+        last_error: SchemaValidationError | None = None
+        for attempt in range(MAX_REPAIR_ATTEMPTS + 1):
+            try:
+                raw = self._invoke(
+                    messages,
+                    structured=schema if use_tooling else None,
+                    force_json=not use_tooling,
+                )
+                return _coerce(raw, schema)
+            except SchemaValidationError as exc:
+                last_error = exc
+                if attempt == MAX_REPAIR_ATTEMPTS:
+                    break
+                logger.info(
+                    "Schema validation failed; asking the model to repair (attempt %s)", attempt + 1
+                )
+                messages = messages + [
+                    HumanMessage(
+                        content=(
+                            "That response was not valid JSON matching the required shape.\n"
+                            f"Problem: {exc.detail}\n"
+                            "Return corrected JSON only, using exactly these keys:\n"
+                            f"{_schema_hint(schema)}"
+                        )
+                    )
+                ]
+
+        assert last_error is not None
+        raise last_error
 
     def _invoke(
         self,
@@ -283,6 +325,36 @@ def _coerce(raw: Any, schema: type[T]) -> T:
         return schema.model_validate(payload)
     except ValidationError as exc:
         raise SchemaValidationError(detail=str(exc)) from exc
+
+
+def _schema_hint(schema: type[BaseModel]) -> str:
+    """Render a Pydantic schema as an annotated JSON skeleton the model can copy."""
+    import json
+
+    def render(node: dict) -> str:
+        if "enum" in node:
+            return json.dumps(node["enum"])
+        node_type = node.get("type", "string")
+        if node_type == "object":
+            fields = node.get("properties", {})
+            required = set(node.get("required", fields))
+            body = ",\n".join(
+                f'  "{name}": {render(sub)}' + ("" if name in required else "  // optional")
+                for name, sub in fields.items()
+            )
+            return "{\n" + body + "\n}"
+        if node_type == "array":
+            items = node.get("items", {"type": "string"})
+            return f"[{render(items)}]"
+        if node_type == "integer":
+            return "0"
+        if node_type == "number":
+            return "0.0"
+        if node_type == "boolean":
+            return "true"
+        return '"..."'
+
+    return render(schema.model_json_schema())
 
 
 def _parse_json_text(text: str) -> Any:

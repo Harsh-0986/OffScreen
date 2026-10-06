@@ -15,7 +15,8 @@ class Settings(BaseSettings):
     """
 
     model_config = SettingsConfigDict(
-        env_file=BACKEND_DIR.parent / ".env",
+        # Accept the env file at the repo root or inside backend/, whichever exists.
+        env_file=(BACKEND_DIR.parent / ".env", BACKEND_DIR / ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -32,8 +33,13 @@ class Settings(BaseSettings):
     upload_dir: str = "uploads"
     max_image_bytes: int = 10 * 1024 * 1024
 
-    # CORS
-    cors_origins: list[str] = ["http://localhost:3000"]
+    # CORS. Kept as a raw string because dotenv values are not JSON-decoded;
+    # use `cors_origin_list` for the parsed list.
+    cors_origins: str = "http://localhost:3000"
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
 
     @property
     def upload_path(self) -> Path:
