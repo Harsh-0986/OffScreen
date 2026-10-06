@@ -134,7 +134,6 @@ def _save_discovery(db: Session):
         row = repo.add_discovery(db, **record)
         payload = row.to_public_dict()
         payload["reasoning"] = row.ai_reasoning
-        payload["image_url"] = f"/{row.image_path}"
         return payload
 
     return save
@@ -144,6 +143,7 @@ def _to_schema(row: Any) -> Discovery:
     """Accept either an ORM row or an already-serialised dict."""
     data = row.to_public_dict() if hasattr(row, "to_public_dict") else dict(row)
     data.setdefault("reasoning", data.pop("ai_reasoning", ""))
-    data.setdefault("image_url", data.get("image_path", ""))
     data.setdefault("feedback", data.pop("ai_feedback", ""))
+    if not data.get("image_url"):
+        data["image_url"] = "/" + str(data.get("image_path", "")).lstrip("/")
     return Discovery(**data)

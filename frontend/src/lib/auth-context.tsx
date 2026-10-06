@@ -11,7 +11,14 @@ import {
   type ReactNode,
 } from "react";
 
-import { ApiError, abortOnUnmount, api, isAbortError, setToken } from "@/lib/api";
+import {
+  ApiError,
+  abortOnUnmount,
+  api,
+  clearRequestCache,
+  isAbortError,
+  setToken,
+} from "@/lib/api";
 import type { AuthUser } from "@/lib/types";
 
 
@@ -58,6 +65,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const adopt = useCallback((response: { token: string; user: AuthUser }) => {
     setToken(response.token);
+    clearRequestCache();
     setUser(response.user);
   }, []);
 
@@ -73,6 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(() => {
     setToken(null);
+    clearRequestCache();
     setUser(null);
     router.push("/");
   }, [router]);

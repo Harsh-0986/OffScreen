@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import uuid
 
 import pytest
 from PIL import Image
@@ -509,3 +510,56 @@ def test_profile_name_is_length_capped(client, account) -> None:
     clean = {k: v for k, v in headers.items() if not k.startswith("_")}
     response = client.patch("/api/profile", json={"display_name": "x" * 200}, headers=clean)
     assert response.status_code == 422
+
+
+# ------------------------------------------------------- image url contract
+
+
+def test_submit_returns_an_absolute_image_url(client, db, account) -> None:
+    """The URL must be root-relative with a leading slash.
+
+    The client builds `${API_BASE}${image_url}`, so a missing slash produced
+    http://localhost:8000uploads/... and every journal image 404'd.
+    """
+    _, headers = account
+    override(FakeGemma())
+    try:
+        image_url = submit(client, db, headers).json()["discovery"]["image_url"]
+    finally:
+        clear()
+    assert image_url.startswith("/uploads/")
+    assert not image_url.startswith("//")
+
+
+def test_journal_returns_the_same_image_url_shape(client, db, account) -> None:
+    _, headers = account
+    clean = {k: v for k, v in headers.items() if not k.startswith("_")}
+    override(FakeGemma())
+    try:
+        submitted = submit(client, db, headers).json()["discovery"]["image_url"]
+        journal = client.get("/api/journal", headers=clean).json()["discoveries"]
+    finally:
+        clear()
+
+    assert journal[0]["image_url"] == submitted
+    assert journal[0]["image_url"].startswith("/uploads/")
+
+
+def test_image_url_is_built_from_a_bare_path(client, db, account) -> None:
+    """Even a stored path without a leading slash must serialise correctly."""
+    user, headers = account
+    row = repo.add_discovery(
+        db,
+        user_id=user.id,
+        challenge_id=challenge_for(db, user_id=user.id).id,
+        image_path=f"uploads/{uuid.uuid4()}.jpg",
+        title="No Slash",
+        description="",
+        score=5,
+        confidence=0.5,
+        category="nature",
+        ai_feedback="",
+    )
+    clean = {k: v for k, v in headers.items() if not k.startswith("_")}
+    entry = client.get("/api/journal", headers=clean).json()["discoveries"][0]
+    assert entry["image_url"] == f"/{row.image_path}"

@@ -78,17 +78,70 @@ type RequestOptions = {
   /** Set false for the login/signup calls, which run before a token exists. */
   auth?: boolean;
   signal?: AbortSignal;
+  /**
+   * Collapse concurrent calls into one and reuse a very recent result.
+   * The session check runs on mount and again after every navigation, and in
+   * dev StrictMode mounts twice, so without this it hammers /api/auth/me.
+   */
+  dedupe?: boolean;
 };
 
+/** How long a deduped GET stays fresh. Short: long enough to stop the bursts. */
+const DEDUPE_TTL_MS = 15_000;
+
+type Inflight = { key: string; promise: Promise<unknown> };
+let inflight: Inflight | null = null;
+const recent = new Map<string, { at: number; value: unknown }>();
+
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { method = "GET", body, formData, auth = true, signal } = options;
+  const { method = "GET", body, formData, auth = true, signal, dedupe } = options;
 
   const headers: Record<string, string> = {};
+  let token: string | null = null;
   if (auth) {
-    const token = getToken();
+    token = getToken();
     if (token) headers.Authorization = `Bearer ${token}`;
   }
   if (body !== undefined) headers["Content-Type"] = "application/json";
+
+  // Cached results are keyed by path *and* token so switching accounts, or
+  // signing out, can never serve the previous user's session.
+  const cacheKey = `${method} ${path} ${token ?? ""}`;
+  if (dedupe) {
+    const hit = recent.get(cacheKey);
+    if (hit && Date.now() - hit.at < DEDUPE_TTL_MS) return hit.value as T;
+    if (inflight?.key === cacheKey) return inflight.promise as Promise<T>;
+  }
+
+  const run = performRequest<T>(path, { method, body, formData, headers, signal });
+
+  if (dedupe) {
+    const tracked = run
+      .then((value) => {
+        recent.set(cacheKey, { at: Date.now(), value });
+        return value;
+      })
+      .finally(() => {
+        if (inflight?.promise === tracked) inflight = null;
+      });
+    inflight = { key: cacheKey, promise: tracked };
+    return tracked;
+  }
+
+  return run;
+}
+
+async function performRequest<T>(
+  path: string,
+  options: {
+    method: string;
+    body?: unknown;
+    formData?: FormData;
+    headers: Record<string, string>;
+    signal?: AbortSignal;
+  },
+): Promise<T> {
+  const { method, body, formData, headers, signal } = options;
 
   let response: Response;
   try {
@@ -145,7 +198,7 @@ export const api = {
     }),
   login: (input: { email: string; password: string }) =>
     request<AuthResponse>("/api/auth/login", { method: "POST", body: input, auth: false }),
-  me: (signal?: AbortSignal) => request<AuthUser>("/api/auth/me", { signal }),
+  me: (signal?: AbortSignal) => request<AuthUser>("/api/auth/me", { signal, dedupe: true }),
 
   // --- challenges ---------------------------------------------------------
   today: (signal?: AbortSignal) => request<ChallengeResponse>("/api/challenges/today", { signal }),
@@ -173,5 +226,11 @@ export const api = {
   updateProfile: (display_name: string) =>
     request<Profile>("/api/profile", { method: "PATCH", body: { display_name } }),
 };
+
+/** Drop cached GETs. Called on sign in/out so a new session is never stale. */
+export function clearRequestCache() {
+  recent.clear();
+  inflight = null;
+}
 
 export { API_BASE };

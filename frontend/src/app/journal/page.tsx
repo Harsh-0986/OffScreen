@@ -5,7 +5,8 @@ import { useEffect, useState } from "react";
 
 import { Nav } from "@/components/nav";
 import { EmptyState, ErrorState, Thinking } from "@/components/states";
-import { API_BASE, ApiError, abortOnUnmount, api, isAbortError } from "@/lib/api";
+import { ApiError, abortOnUnmount, api, isAbortError } from "@/lib/api";
+import { imageSrc } from "@/lib/image";
 import { useRequireAuth } from "@/lib/auth-context";
 import { THINKING_LINES, type Discovery } from "@/lib/types";
 
@@ -80,7 +81,7 @@ function JournalEntry({ discovery, index }: { discovery: Discovery; index: numbe
       <figure className="photo-frame">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src={`${API_BASE}${discovery.image_url}`}
+          src={imageSrc(discovery.image_url)}
           alt={discovery.visual_description || discovery.title}
           loading="lazy"
           className="aspect-square w-full object-cover"

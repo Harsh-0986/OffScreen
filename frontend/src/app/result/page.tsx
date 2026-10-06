@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 
 import { Nav } from "@/components/nav";
 import { EmptyState } from "@/components/states";
-import { API_BASE } from "@/lib/api";
+import { imageSrc } from "@/lib/image";
 import type { Discovery } from "@/lib/types";
 
 const LAST_KEY = "ono:last-discovery";
@@ -78,7 +78,7 @@ export default function ResultPage() {
           {/* Served by the backend from /uploads. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={`${API_BASE}${discovery.image_url}`}
+            src={imageSrc(discovery.image_url)}
             alt={discovery.visual_description || discovery.title}
             className="aspect-square w-full object-cover"
           />

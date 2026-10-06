@@ -49,6 +49,9 @@ class Discovery(Base):
             "id": self.id,
             "challenge_id": self.challenge_id,
             "image_path": self.image_path,
+            # Always absolute-from-root. The journal and the submit response used
+            # to disagree on the leading slash, which broke journal images.
+            "image_url": f"/{self.image_path.lstrip('/')}",
             "title": self.title,
             "description": self.description,
             "score": self.score,
