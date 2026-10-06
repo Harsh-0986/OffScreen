@@ -7,10 +7,11 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 
-from app.api.deps import read_capped_upload, resolve_user_id
+from app.api.deps import get_current_user, read_capped_upload
 from app.config import get_settings
 from app.db import repositories as repo
 from app.db.session import get_db
+from app.models import User
 from app.schemas.photo import PhotoAnalysisResponse
 from app.services.analysis import analyze_photo
 from app.services.gemma import GemmaService, get_gemma_service
@@ -30,7 +31,7 @@ async def analyze(
     image: Annotated[UploadFile, File(description="JPEG, PNG or WebP photograph")],
     challenge_id: Annotated[str | None, Form()] = None,
     save: Annotated[bool, Form()] = False,
-    user_id: Annotated[str, Depends(resolve_user_id)] = "",
+    user: Annotated[User, Depends(get_current_user)] = None,  # type: ignore[assignment]
     db=Depends(get_db),
     service: Annotated[GemmaService, Depends(get_service)] = None,  # type: ignore[assignment]
 ) -> PhotoAnalysisResponse:
@@ -44,7 +45,7 @@ async def analyze(
 
     challenge = None
     if challenge_id:
-        row = repo.get_challenge(db, user_id, challenge_id)
+        row = repo.get_challenge(db, user.id, challenge_id)
         if row is not None:
             challenge = {"id": row.id, "title": row.title, "prompt": row.prompt}
 

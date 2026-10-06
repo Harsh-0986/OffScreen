@@ -13,6 +13,8 @@ from datetime import UTC, date, datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.errors import DuplicateEmailError
+from app.errors import NotFoundError as UserNotFoundError
 from app.models import Challenge, ChallengeStatus, Discovery, User, UserPreference
 
 # How long a generated challenge stays "today's".
@@ -22,24 +24,41 @@ CHALLENGE_TTL_HOURS = 24
 # ------------------------------------------------------------------- users
 
 
-def get_or_create_user(session: Session, user_id: str) -> User:
-    """Return the user, creating a row on first sight.
+def create_user(
+    session: Session,
+    *,
+    user_id: str,
+    email: str,
+    password_hash: str,
+    display_name: str,
+) -> User:
+    """Create an account. Raises DuplicateEmailError if the email is taken."""
+    if get_user_by_email(session, email) is not None:
+        raise DuplicateEmailError("That email already has an account.")
 
-    The MVP has no sign-up (SPEC §3), so the first request bootstraps the profile.
-    """
-    user = session.get(User, user_id)
-    if user is not None:
-        return user
-
-    user = User(id=user_id)
+    user = User(
+        id=user_id,
+        email=email,
+        password_hash=password_hash,
+        display_name=display_name,
+    )
     session.add(user)
     session.commit()
     session.refresh(user)
     return user
 
 
+def get_user_by_email(session: Session, email: str) -> User | None:
+    stmt = select(User).where(User.email == email)
+    return session.scalars(stmt).first()
+
+
+def get_user(session: Session, user_id: str) -> User | None:
+    return session.get(User, user_id)
+
+
 def get_user_profile(session: Session, user_id: str) -> dict:
-    user = session.get(User, user_id)
+    user = get_user(session, user_id)
     if user is None:
         return {
             "id": user_id,
@@ -55,7 +74,9 @@ def get_user_profile(session: Session, user_id: str) -> dict:
 
 
 def set_display_name(session: Session, user_id: str, display_name: str) -> User:
-    user = get_or_create_user(session, user_id)
+    user = get_user(session, user_id)
+    if user is None:
+        raise UserNotFoundError(user_id)
     user.display_name = display_name[:80]
     session.commit()
     session.refresh(user)

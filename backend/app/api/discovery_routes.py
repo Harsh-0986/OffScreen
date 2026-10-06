@@ -8,12 +8,13 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 from sqlalchemy.orm import Session
 
-from app.api.deps import read_capped_upload, resolve_user_id
+from app.api.deps import get_current_user, read_capped_upload
 from app.config import get_settings
 from app.db import repositories as repo
 from app.db.session import get_db
 from app.errors import GemmaError, NotFoundError
 from app.graph.graph import run_discovery_graph
+from app.models import User
 from app.schemas.discovery import (
     Discovery,
     DiscoveryResponse,
@@ -28,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["discoveries"])
 
-UserId = Annotated[str, Depends(resolve_user_id)]
+CurrentUser = Annotated[User, Depends(get_current_user)]
 Db = Annotated[Session, Depends(get_db)]
 
 
@@ -40,7 +41,7 @@ def get_service() -> GemmaService:
 async def submit_discovery(
     image: Annotated[UploadFile, File()],
     challenge_id: Annotated[str, Form()],
-    user_id: UserId,
+    user: CurrentUser,
     db: Db,
     service: Annotated[GemmaService, Depends(get_service)] = None,  # type: ignore[assignment]
 ) -> DiscoveryResponse:
@@ -52,7 +53,7 @@ async def submit_discovery(
         data, declared_mime=image.content_type, max_bytes=settings.max_image_bytes
     )
 
-    challenge = repo.get_challenge(db, user_id, challenge_id)
+    challenge = repo.get_challenge(db, user.id, challenge_id)
     if challenge is None:
         raise NotFoundError("That challenge could not be found.")
 
@@ -61,7 +62,7 @@ async def submit_discovery(
     stored_name = store_image(processed.data, settings.upload_path)
 
     state = await run_discovery_graph(
-        user_id,
+        user.id,
         challenge_id=challenge.id,
         image_bytes=processed.data,
         image_mime_type=processed.mime_type,
@@ -83,31 +84,29 @@ async def submit_discovery(
 
 @router.get("/journal", response_model=JournalResponse)
 async def journal(
-    user_id: UserId,
+    user: CurrentUser,
     db: Db,
     limit: int = 50,
     offset: int = 0,
 ) -> JournalResponse:
-    rows = repo.list_discoveries(db, user_id, limit=min(limit, 100), offset=offset)
+    rows = repo.list_discoveries(db, user.id, limit=min(limit, 100), offset=offset)
     return JournalResponse(discoveries=[_to_schema(r) for r in rows], total=len(rows))
 
 
 @router.patch("/profile", response_model=ProfileResponse)
-async def update_profile(user_id: UserId, db: Db, body: ProfileUpdate) -> ProfileResponse:
+async def update_profile(user: CurrentUser, db: Db, body: ProfileUpdate) -> ProfileResponse:
     """Set the display name.
 
     The MVP has no accounts (SPEC §3); this only lets someone put a name on the
     profile they already have.
     """
-    repo.get_or_create_user(db, user_id)
-    repo.set_display_name(db, user_id, body.display_name)
-    return ProfileResponse(**repo.get_user_profile(db, user_id))
+    repo.set_display_name(db, user.id, body.display_name)
+    return ProfileResponse(**repo.get_user_profile(db, user.id))
 
 
 @router.get("/profile", response_model=ProfileResponse)
-async def profile(user_id: UserId, db: Db) -> ProfileResponse:
-    repo.get_or_create_user(db, user_id)
-    return ProfileResponse(**repo.get_user_profile(db, user_id))
+async def profile(user: CurrentUser, db: Db) -> ProfileResponse:
+    return ProfileResponse(**repo.get_user_profile(db, user.id))
 
 
 # ------------------------------------------------------------------ helpers

@@ -2,37 +2,40 @@
 
 from __future__ import annotations
 
-import uuid
+from typing import Annotated
 
-from fastapi import Header, UploadFile
+from fastapi import Depends, Header, UploadFile
+from sqlalchemy.orm import Session
 
-from app.errors import ImageValidationError, InvalidIdentityError
-
-USER_ID_HEADER = "X-User-Id"
-
-
-def resolve_user_id(x_user_id: str | None = Header(default=None)) -> str:
-    """Resolve the caller's identity.
-
-    The MVP has no authentication (SPEC §3), but the data model is multi-user.
-    The frontend generates a UUID once and sends it on every request, which gives
-    per-browser separation without an account system. Adding real auth later
-    means replacing this function, nothing else.
-
-    A missing header gets a fresh UUID, so a plain `curl` still works.
-    """
-    if not x_user_id:
-        return str(uuid.uuid4())
-
-    try:
-        return str(uuid.UUID(x_user_id))
-    except ValueError as exc:
-        raise InvalidIdentityError(f"{USER_ID_HEADER} must be a UUID.") from exc
-
+from app.config import Settings, get_settings
+from app.db import repositories as repo
+from app.db.session import get_db
+from app.errors import AuthError, ImageValidationError
+from app.models import User
+from app.services.auth import decode_token
 
 # Upload reads happen in chunks so an oversized body is rejected without ever
 # being buffered whole.
 CHUNK_SIZE = 64 * 1024
+
+
+def get_current_user(
+    authorization: Annotated[str | None, Header()] = None,
+    db: Annotated[Session, Depends(get_db)] = None,  # type: ignore[assignment]
+    settings: Annotated[Settings, Depends(get_settings)] = None,  # type: ignore[assignment]
+) -> User:
+    """Resolve the signed-in user from a bearer token.
+
+    There is no anonymous access: every discovery belongs to an account.
+    """
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise AuthError("Please sign in to continue.")
+
+    payload = decode_token(authorization.split(" ", 1)[1].strip(), settings.secret_key)
+    user = repo.get_user(db, payload.user_id)
+    if user is None:
+        raise AuthError("That account no longer exists.")
+    return user
 
 
 async def read_capped_upload(upload: UploadFile, max_bytes: int) -> bytes:

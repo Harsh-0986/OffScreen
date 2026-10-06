@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from app.db import repositories as repo
 from app.models import Challenge, ChallengeStatus, Discovery, User, UserPreference
 
@@ -35,11 +37,29 @@ def test_all_four_tables_exist(db) -> None:
 # -------------------------------------------------------------------- users
 
 
-def test_get_or_create_user_creates_then_reuses(db) -> None:
-    first = repo.get_or_create_user(db, USER)
-    second = repo.get_or_create_user(db, USER)
-    assert first.id == second.id == USER
-    assert db.query(User).count() == 1
+def test_create_user_then_lookup_by_email(db, user_and_headers) -> None:
+    user, _ = user_and_headers
+    assert repo.get_user_by_email(db, user.email).id == user.id
+    assert repo.get_user(db, user.id).id == user.id
+
+
+def test_duplicate_email_is_refused(db, user_and_headers) -> None:
+    from app.errors import DuplicateEmailError
+
+    user, _ = user_and_headers
+    with pytest.raises(DuplicateEmailError):
+        repo.create_user(
+            db,
+            user_id="another-id",
+            email=user.email,
+            password_hash="x",
+            display_name="Impostor",
+        )
+
+
+def test_missing_user_returns_none(db) -> None:
+    assert repo.get_user(db, "nobody") is None
+    assert repo.get_user_by_email(db, "nobody@example.com") is None
 
 
 def test_profile_defaults_for_unknown_user(db) -> None:
@@ -48,9 +68,17 @@ def test_profile_defaults_for_unknown_user(db) -> None:
     assert profile["favorite_categories"] == {}
 
 
-def test_display_name_is_truncated(db) -> None:
-    user = repo.set_display_name(db, USER, "x" * 200)
-    assert len(user.display_name) == 80
+def test_display_name_is_truncated(db, user_and_headers) -> None:
+    user, _ = user_and_headers
+    updated = repo.set_display_name(db, user.id, "x" * 200)
+    assert len(updated.display_name) == 80
+
+
+def test_display_name_for_unknown_user_raises(db) -> None:
+    from app.errors import NotFoundError
+
+    with pytest.raises(NotFoundError):
+        repo.set_display_name(db, "nobody", "Ghost")
 
 
 # --------------------------------------------------------------- challenges
@@ -101,13 +129,13 @@ def test_list_challenge_titles_is_newest_first(db) -> None:
 # ------------------------------------------------------------- discoveries
 
 
-def test_add_discovery_updates_profile_and_marks_challenge(db) -> None:
-    user = repo.get_or_create_user(db, USER)
-    challenge = _challenge(db)
+def test_add_discovery_updates_profile_and_marks_challenge(db, user_and_headers) -> None:
+    user, _ = user_and_headers
+    challenge = _challenge(db, user_id=user.id)
 
     discovery = repo.add_discovery(
         db,
-        user_id=USER,
+        user_id=user.id,
         challenge_id=challenge.id,
         image_path="uploads/x.jpg",
         title="A Face In The Bark",
@@ -202,16 +230,17 @@ def test_discovery_public_dict_shape(db) -> None:
     assert isinstance(payload["created_at"], str)
 
 
-def test_user_to_public_dict_includes_preferences(db) -> None:
-    repo.get_or_create_user(db, USER)
-    repo.bump_preference(db, USER, "nature", 3.0)
-    profile = repo.get_user_profile(db, USER)
+def test_user_to_public_dict_includes_preferences(db, user_and_headers) -> None:
+    user, _ = user_and_headers
+    repo.bump_preference(db, user.id, "nature", 3.0)
+    profile = repo.get_user_profile(db, user.id)
     assert profile["favorite_categories"] == {"nature": 3.0}
 
 
-def test_cascade_delete_user_removes_children(db) -> None:
-    user = repo.get_or_create_user(db, USER)
-    challenge = _challenge(db)
+def test_cascade_delete_user_removes_children(db, user_and_headers) -> None:
+    user, _ = user_and_headers
+    USER = user.id
+    challenge = _challenge(db, user_id=USER)
     repo.add_discovery(
         db,
         user_id=USER,
@@ -231,11 +260,13 @@ def test_cascade_delete_user_removes_children(db) -> None:
     assert db.query(UserPreference).count() == 0
 
 
-def test_discovery_persists_across_sessions(db) -> None:
+def test_discovery_persists_across_sessions(db, user_and_headers) -> None:
     """Phase 5 acceptance: data survives a new session/engine (SPEC §33)."""
     from app.db.session import SessionLocal
 
-    challenge = _challenge(db)
+    user, _ = user_and_headers
+    USER = user.id
+    challenge = _challenge(db, user_id=USER)
     repo.add_discovery(
         db,
         user_id=USER,

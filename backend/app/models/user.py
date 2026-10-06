@@ -14,6 +14,8 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(255))
     display_name: Mapped[str] = mapped_column(String(80), default="Curious human")
 
     total_points: Mapped[int] = mapped_column(Integer, default=0)
@@ -41,6 +43,7 @@ class User(Base):
         """The shape returned by GET /api/profile."""
         return {
             "id": self.id,
+            "email": self.email,
             "display_name": self.display_name,
             "total_points": self.total_points,
             "discoveries_count": self.discoveries_count,

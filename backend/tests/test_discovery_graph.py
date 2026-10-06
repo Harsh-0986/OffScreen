@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 
+import pytest
 from PIL import Image
 
 from app.api.discovery_routes import get_service
@@ -11,6 +12,7 @@ from app.db import repositories as repo
 from app.errors import GemmaError
 from app.graph.graph import build_discovery_graph, run_discovery_graph
 from app.main import app
+from app.models import Discovery as DiscoveryRow
 from app.schemas.ai import DiscoveryEvaluation, DiscoveryFeedback, DiscoveryJudgment
 
 USER = "11111111-1111-4111-8111-111111111111"
@@ -272,21 +274,27 @@ def clear() -> None:
     app.dependency_overrides.clear()
 
 
-def post(client, db, *, challenge_id=None, data=None, user=USER):
-    challenge_id = challenge_id or challenge_for(db).id
+def submit(client, db, headers, *, challenge_id=None, data=None):
+    challenge_id = challenge_id or challenge_for(db, user_id=headers["_uid"]).id
     return client.post(
         "/api/discoveries",
         files={"image": ("photo.jpg", data or image_bytes(), "image/jpeg")},
         data={"challenge_id": challenge_id},
-        headers={"X-User-Id": user},
+        headers={k: v for k, v in headers.items() if not k.startswith("_")},
     )
 
 
-def test_submit_returns_the_discovery(client, db) -> None:
-    repo.get_or_create_user(db, USER)
+@pytest.fixture
+def account(make_user):
+    user, headers = make_user()
+    return user, {**headers, "_uid": user.id}
+
+
+def test_submit_returns_the_discovery(client, db, account) -> None:
+    _, headers = account
     override(FakeGemma())
     try:
-        body = post(client, db).json()
+        body = submit(client, db, headers).json()
     finally:
         clear()
 
@@ -300,11 +308,11 @@ def test_submit_returns_the_discovery(client, db) -> None:
     assert discovery["confidence"] == 0.91
 
 
-def test_submit_updates_the_profile(client, db) -> None:
-    repo.get_or_create_user(db, USER)
+def test_submit_updates_the_profile(client, db, account) -> None:
+    _, headers = account
     override(FakeGemma())
     try:
-        body = post(client, db).json()
+        body = submit(client, db, headers).json()
     finally:
         clear()
     assert body["profile"]["total_points"] == 9
@@ -312,25 +320,26 @@ def test_submit_updates_the_profile(client, db) -> None:
     assert body["profile"]["favorite_categories"] == {"nature": 1.0}
 
 
-def test_submit_persists_a_discovery_row(client, db) -> None:
-    repo.get_or_create_user(db, USER)
+def test_submit_persists_a_discovery_row(client, db, account) -> None:
+    user, headers = account
     override(FakeGemma())
     try:
-        post(client, db)
+        submit(client, db, headers)
     finally:
         clear()
-    rows = db.query(repo.Discovery).all()
+    rows = db.query(DiscoveryRow).all()
     assert len(rows) == 1
     assert rows[0].score == 9
     assert rows[0].tagline == "a face, hiding"
+    assert rows[0].user_id == user.id
 
 
-def test_submit_marks_the_challenge_completed(client, db) -> None:
-    repo.get_or_create_user(db, USER)
-    challenge = challenge_for(db)
+def test_submit_marks_the_challenge_completed(client, db, account) -> None:
+    _, headers = account
+    challenge = challenge_for(db, user_id=headers["_uid"])
     override(FakeGemma())
     try:
-        post(client, db, challenge_id=challenge.id)
+        submit(client, db, headers, challenge_id=challenge.id)
     finally:
         clear()
     db.refresh(challenge)
@@ -338,127 +347,165 @@ def test_submit_marks_the_challenge_completed(client, db) -> None:
     assert challenge.completed_at is not None
 
 
-def test_unknown_challenge_returns_404(client, db) -> None:
+def test_submit_requires_authentication(client, db) -> None:
+    override(FakeGemma())
+    try:
+        response = client.post(
+            "/api/discoveries",
+            files={"image": ("p.jpg", image_bytes(), "image/jpeg")},
+            data={"challenge_id": "anything"},
+        )
+    finally:
+        clear()
+    assert response.status_code == 401
+
+
+def test_unknown_challenge_returns_404(client, db, account) -> None:
+    _, headers = account
     override(FakeGemma())
     try:
         response = client.post(
             "/api/discoveries",
             files={"image": ("p.jpg", image_bytes(), "image/jpeg")},
             data={"challenge_id": "nope"},
-            headers={"X-User-Id": USER},
+            headers={k: v for k, v in headers.items() if not k.startswith("_")},
         )
     finally:
         clear()
     assert response.status_code == 404
 
 
-def test_cannot_submit_against_another_users_challenge(client, db) -> None:
-    other = "22222222-2222-4222-8222-222222222222"
-    repo.get_or_create_user(db, other)
-    challenge = challenge_for(db, user_id=other)
+def test_cannot_submit_against_another_users_challenge(client, db, make_user) -> None:
+    _, mine = make_user("me@example.com")
+    victim, theirs = make_user("them@example.com")
+    challenge = challenge_for(db, user_id=victim.id)
+
     gemma = FakeGemma()
     override(gemma)
     try:
-        response = post(client, db, challenge_id=challenge.id)
+        response = submit(client, db, {**mine, "_uid": "unused"}, challenge_id=challenge.id)
     finally:
         clear()
     assert response.status_code == 404
     assert gemma.image_calls == [], "the model must not run for another user's challenge"
 
 
-def test_bad_image_never_reaches_the_model(client, db) -> None:
+def test_bad_image_never_reaches_the_model(client, db, account) -> None:
+    _, headers = account
     gemma = FakeGemma()
     override(gemma)
     try:
-        response = post(client, db, data=b"MZ not an image")
+        response = submit(client, db, headers, data=b"MZ not an image")
     finally:
         clear()
     assert response.status_code == 400
     assert gemma.image_calls == []
 
 
-def test_model_failure_returns_502_and_no_trace(client, db) -> None:
-    repo.get_or_create_user(db, USER)
+def test_model_failure_returns_502_and_no_trace(client, db, account) -> None:
+    _, headers = account
     override(FakeGemma(error=GemmaError("couldn't look at that photo")))
     try:
-        response = post(client, db)
+        response = submit(client, db, headers)
     finally:
         clear()
     assert response.status_code == 502
     assert "Traceback" not in response.text
 
 
+def test_failed_discovery_is_saved(client, db, account) -> None:
+    """A miss belongs in the journal, flagged incomplete."""
+    _, headers = account
+    override(
+        FakeGemma(
+            judgment_result=judgment(
+                completed=False, score=2, feedback="No face yet — keep looking."
+            )
+        )
+    )
+    try:
+        body = submit(client, db, headers).json()
+    finally:
+        clear()
+    assert body["discovery"]["completed"] is False
+    assert body["discovery"]["score"] == 2
+    assert body["profile"]["discoveries_count"] == 1
+
+
 # ------------------------------------------------------- journal & profile
 
 
-def test_journal_lists_discoveries_newest_first(client, db) -> None:
-    repo.get_or_create_user(db, USER)
+def test_journal_lists_discoveries_newest_first(client, db, account) -> None:
+    _, headers = account
+    clean = {k: v for k, v in headers.items() if not k.startswith("_")}
     override(FakeGemma())
     try:
-        post(client, db)
-        post(client, db)
+        submit(client, db, headers)
+        submit(client, db, headers)
     finally:
         clear()
-    body = client.get("/api/journal", headers={"X-User-Id": USER}).json()
+    body = client.get("/api/journal", headers=clean).json()
     assert body["total"] == 2
     assert len(body["discoveries"]) == 2
 
 
-def test_journal_is_empty_for_a_new_user(client) -> None:
-    body = client.get("/api/journal", headers={"X-User-Id": USER}).json()
-    assert body == {"discoveries": [], "total": 0}
+def test_journal_is_empty_for_a_new_account(client, account) -> None:
+    _, headers = account
+    clean = {k: v for k, v in headers.items() if not k.startswith("_")}
+    assert client.get("/api/journal", headers=clean).json() == {"discoveries": [], "total": 0}
 
 
-def test_journal_is_scoped_per_user(client, db) -> None:
-    repo.get_or_create_user(db, USER)
-    override(FakeGemma())
-    try:
-        post(client, db)
-    finally:
-        clear()
-    other = client.get(
-        "/api/journal", headers={"X-User-Id": "22222222-2222-4222-8222-222222222222"}
-    ).json()
-    assert other["total"] == 0
+def test_journal_is_scoped_per_user(client, db, make_user) -> None:
+    _, mine = make_user("mine@example.com")
+    submit(client, db, {**mine, "_uid": "x"})
+    _, theirs = make_user("theirs@example.com")
+    assert client.get("/api/journal", headers=theirs).json()["total"] == 0
 
 
-def test_profile_creates_on_first_request(client) -> None:
-    body = client.get("/api/profile", headers={"X-User-Id": USER}).json()
+def test_journal_requires_authentication(client) -> None:
+    assert client.get("/api/journal").status_code == 401
+
+
+def test_profile_reports_a_fresh_account(client, account) -> None:
+    _, headers = account
+    clean = {k: v for k, v in headers.items() if not k.startswith("_")}
+    body = client.get("/api/profile", headers=clean).json()
     assert body["total_points"] == 0
     assert body["discoveries_count"] == 0
     assert body["favorite_categories"] == {}
 
 
-def test_profile_reflects_discoveries(client, db) -> None:
-    repo.get_or_create_user(db, USER)
+def test_profile_reflects_discoveries(client, db, account) -> None:
+    _, headers = account
+    clean = {k: v for k, v in headers.items() if not k.startswith("_")}
     override(FakeGemma())
     try:
-        post(client, db)
+        submit(client, db, headers)
     finally:
         clear()
-    body = client.get("/api/profile", headers={"X-User-Id": USER}).json()
+    body = client.get("/api/profile", headers=clean).json()
     assert body["total_points"] == 9
     assert body["discoveries_count"] == 1
     assert body["favorite_categories"] == {"nature": 1.0}
 
 
-def test_profile_name_can_be_set(client) -> None:
-    response = client.patch(
-        "/api/profile", json={"display_name": "Harsh"}, headers={"X-User-Id": USER}
-    )
+def test_profile_name_can_be_set(client, account) -> None:
+    _, headers = account
+    clean = {k: v for k, v in headers.items() if not k.startswith("_")}
+    response = client.patch("/api/profile", json={"display_name": "Harsh"}, headers=clean)
     assert response.status_code == 200
     assert response.json()["display_name"] == "Harsh"
-    fetched = client.get("/api/profile", headers={"X-User-Id": USER}).json()
-    assert fetched["display_name"] == "Harsh"
+    assert client.get("/api/profile", headers=clean).json()["display_name"] == "Harsh"
 
 
-def test_profile_name_is_required(client) -> None:
-    response = client.patch("/api/profile", json={}, headers={"X-User-Id": USER})
-    assert response.status_code == 422
+def test_profile_name_is_required(client, account) -> None:
+    _, headers = account
+    clean = {k: v for k, v in headers.items() if not k.startswith("_")}
+    assert client.patch("/api/profile", json={}, headers=clean).status_code == 422
 
 
-def test_profile_name_is_length_capped(client) -> None:
-    response = client.patch(
-        "/api/profile", json={"display_name": "x" * 200}, headers={"X-User-Id": USER}
-    )
+def test_profile_name_is_length_capped(client, account) -> None:
+    _, headers = account
+    clean = {k: v for k, v in headers.items() if not k.startswith("_")}
+    response = client.patch("/api/profile", json={"display_name": "x" * 200}, headers=clean)
     assert response.status_code == 422

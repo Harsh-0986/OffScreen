@@ -29,10 +29,22 @@ class ImageValidationError(AppError):
     status_code = 400
 
 
-class InvalidIdentityError(AppError):
-    """The supplied user identifier is not a valid UUID."""
+class AuthError(AppError):
+    """Not signed in, or the session is no longer valid."""
 
-    status_code = 400
+    status_code = 401
+
+
+class CredentialsError(AuthError):
+    """Email/password combination did not match."""
+
+    status_code = 401
+
+
+class DuplicateEmailError(AppError):
+    """That email already has an account."""
+
+    status_code = 409
 
 
 class NotFoundError(AppError):

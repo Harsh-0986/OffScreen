@@ -120,61 +120,87 @@ def test_graph_shape_is_linear() -> None:
 # ------------------------------------------------------------------- endpoint
 
 
-def test_generate_endpoint_returns_challenge(client) -> None:
+def test_generate_endpoint_returns_challenge(client, user_and_headers) -> None:
+    _, headers = user_and_headers
     override(FakeGemma(VALID_DRAFT))
     try:
-        body = client.post("/api/challenges/generate", headers={"X-User-Id": _uuid()}).json()
+        body = client.post("/api/challenges/generate", headers=headers).json()
     finally:
         app.dependency_overrides.clear()
     assert body["challenge"]["title"] == "Branches With A Face"
     assert body["challenge"]["estimated_minutes"] == 20
 
 
-def test_generate_endpoint_works_without_a_user_header(client) -> None:
-    """A plain curl with no identity still returns a challenge."""
+def test_generate_endpoint_requires_authentication(client) -> None:
+    """There is no anonymous access any more."""
     override(FakeGemma(VALID_DRAFT))
     try:
         response = client.post("/api/challenges/generate")
     finally:
         app.dependency_overrides.clear()
-    assert response.status_code == 200
+    assert response.status_code == 401
 
 
-def test_generate_endpoint_rejects_a_bad_user_id(client) -> None:
+def test_generate_endpoint_rejects_a_forged_token(client, user_and_headers) -> None:
+    _, _ = user_and_headers
     override(FakeGemma(VALID_DRAFT))
     try:
-        response = client.post("/api/challenges/generate", headers={"X-User-Id": "not-a-uuid"})
+        response = client.post(
+            "/api/challenges/generate", headers={"Authorization": "Bearer not.a.token"}
+        )
     finally:
         app.dependency_overrides.clear()
-    assert response.status_code == 400
-    assert "UUID" in response.json()["detail"]
+    assert response.status_code == 401
     assert "Traceback" not in response.text
 
 
-def test_generate_endpoint_surfaces_model_failure_as_502(client) -> None:
+def test_generate_endpoint_rejects_a_tampered_signature(client, user_and_headers) -> None:
+    _, headers = user_and_headers
+    token = headers["Authorization"].split(".", 3)[1]
+    tampered = dict(headers)
+    tampered["Authorization"] = f"Bearer {token}x.1.deadbeef"
+    override(FakeGemma(VALID_DRAFT))
+    try:
+        response = client.post("/api/challenges/generate", headers=tampered)
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 401
+
+
+def test_generate_endpoint_surfaces_model_failure_as_502(client, user_and_headers) -> None:
+    _, headers = user_and_headers
     override(FakeGemma(error=GemmaError("model unavailable")))
     try:
-        response = client.post("/api/challenges/generate")
+        response = client.post("/api/challenges/generate", headers=headers)
     finally:
         app.dependency_overrides.clear()
     assert response.status_code == 502
 
 
-def _uuid() -> str:
-    return "11111111-1111-4111-8111-111111111111"
+def test_each_user_gets_their_own_challenge(client, make_user) -> None:
+    _, headers_a = make_user("a@example.com")
+    _, headers_b = make_user("b@example.com")
+    override(FakeGemma(VALID_DRAFT))
+    try:
+        a = client.post("/api/challenges/generate", headers=headers_a).json()
+        b = client.post("/api/challenges/generate", headers=headers_b).json()
+    finally:
+        app.dependency_overrides.clear()
+    assert a["challenge"]["id"] != b["challenge"]["id"]
 
 
 @pytest.mark.parametrize("path", ["/api/challenges/generate", "/api/challenges/today"])
-def test_endpoints_reject_invalid_user_id(path: str, client) -> None:
-    """Path-traversal style identities are rejected before any lookup."""
+def test_endpoints_require_authentication(path: str, client) -> None:
     override(FakeGemma(VALID_DRAFT))
     try:
         response = client.request(
-            "POST" if "generate" in path else "GET", path, headers={"X-User-Id": "../../etc/passwd"}
+            "POST" if "generate" in path else "GET",
+            path,
+            headers={"Authorization": "Bearer ../../etc/passwd"},
         )
     finally:
         app.dependency_overrides.clear()
-    assert response.status_code == 400
+    assert response.status_code == 401
 
 
 # ---------------------------------------------------------- personalization

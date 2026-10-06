@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     upload_dir: str = "uploads"
     max_image_bytes: int = 10 * 1024 * 1024
 
+    # Auth. Generate with: python -c "import secrets; print(secrets.token_urlsafe(48))"
+    secret_key: str = "dev-only-insecure-secret-change-me"
+
     # CORS. Kept as a raw string because dotenv values are not JSON-decoded;
     # use `cors_origin_list` for the parsed list.
     cors_origins: str = "http://localhost:3000"
