@@ -3,8 +3,9 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useRef, useState } from "react";
 
-import { ErrorState } from "@/components/states";
+import { ErrorState, Thinking } from "@/components/states";
 import { api } from "@/lib/api";
+import { THINKING_LINES } from "@/lib/types";
 
 const MAX_BYTES = 10 * 1024 * 1024;
 
@@ -129,19 +130,25 @@ function Submit() {
         </p>
       )}
 
-      <div className="mt-10">
-        <button
-          type="button"
-          onClick={submit}
-          disabled={!file || busy}
-          className="inline-flex h-14 w-full items-center justify-center rounded-full bg-moss text-sm font-semibold tracking-[0.15em] text-paper transition hover:bg-moss/90 disabled:opacity-40"
-        >
-          {busy ? "Gemma is looking..." : "SUBMIT DISCOVERY"}
-        </button>
-        <p className="reflection mt-4 text-center text-sm">
-          {busy ? "Looking closely. This takes up to fifteen seconds." : " "}
-        </p>
-      </div>
+      {/* Gemma judges the photo in one pass; the wait is real, so show it. */}
+      {busy ? (
+        <Thinking
+          lines={THINKING_LINES}
+          title="Gemma is looking"
+          hint="One look at the photograph, then a verdict. This takes up to fifteen seconds."
+        />
+      ) : (
+        <div className="mt-10">
+          <button
+            type="button"
+            onClick={submit}
+            disabled={!file}
+            className="inline-flex h-14 w-full items-center justify-center rounded-full bg-moss text-sm font-semibold tracking-[0.15em] text-paper transition hover:bg-moss/90 disabled:opacity-40"
+          >
+            SUBMIT DISCOVERY
+          </button>
+        </div>
+      )}
     </main>
   );
 }

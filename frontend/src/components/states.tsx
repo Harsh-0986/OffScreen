@@ -1,33 +1,67 @@
-/** Calm, non-alarming states (SPEC §38). No spinners screaming for attention. */
+"use client";
 
-export function Thinking({ lines }: { lines: readonly string[] }) {
-  return (
-    <div className="flex flex-col items-center gap-6 py-24 text-center" role="status">
-      <span className="h-8 w-8 animate-spin rounded-full border-2 border-line border-t-moss" />
-      {/* The line changes every few seconds so a long wait still feels alive. */}
-      <RotatingLine lines={lines} />
-      <p className="max-w-xs text-sm text-ink-faint">
-        This can take up to half a minute. Close the app if you like — the
-        challenge will be waiting.
-      </p>
-    </div>
-  );
-}
+import { useEffect, useState } from "react";
 
-function RotatingLine({ lines }: { lines: readonly string[] }) {
+/**
+ * Waiting states (SPEC §38).
+ *
+ * Gemma takes up to ~35s on a free tier, which is long enough that a spinner
+ * reads as "broken". So: one line at a time, a slow progress rule that never
+ * pretends to know the end, and honest copy about how long it can take.
+ */
+export function Thinking({
+  lines,
+  title = "Finding something interesting",
+  hint = "Gemma writes a new challenge from scratch each time. This usually takes under a minute — you can close the app and come back.",
+}: {
+  lines: readonly string[];
+  title?: string;
+  hint?: string;
+}) {
+  const [index, setIndex] = useState(0);
+  const [seconds, setSeconds] = useState(0);
+
+  // One line at a time, advancing slowly.
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setIndex((current) => (current + 1) % lines.length);
+    }, 4000);
+    return () => clearInterval(timer);
+  }, [lines.length]);
+
+  useEffect(() => {
+    const timer = setInterval(() => setSeconds((value) => value + 1), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Fills over ~45s then stops. It is deliberately not a true progress bar:
+  // pretending to know when the model will finish is worse than not showing one.
+  const progress = Math.min(0.92, seconds / 45);
+
   return (
-    <span className="font-display text-2xl tracking-tight">
-      {lines.map((line, index) => (
-        <span
-          key={line}
-          className="animate-[fade_4s_ease-in-out_infinite] first:opacity-100"
-          style={{ animationDelay: `${index * 4}s` }}
-        >
-          {index > 0 ? " " : ""}
-          {line}
+    <div className="flex flex-col items-center py-24 text-center" role="status" aria-live="polite">
+      <p className="eyebrow">{title}</p>
+
+      <p className="font-display mt-8 h-20 text-[clamp(1.75rem,5vw,3rem)] tracking-tight">
+        <span key={index} className="animate-[rise_500ms_ease-out_both]">
+          {lines[index]}
         </span>
-      ))}
-    </span>
+      </p>
+
+      <div className="mt-4 h-px w-56 overflow-hidden bg-line" aria-hidden="true">
+        <div
+          className="h-full bg-moss transition-[width] duration-1000 ease-linear"
+          style={{ width: `${progress * 100}%` }}
+        />
+      </div>
+
+      <p className="eyebrow mt-4 tabular-nums">
+        {String(Math.floor(seconds / 60)).padStart(2, "0")}:
+        {String(seconds % 60).padStart(2, "0")}
+      </p>
+
+      <p className="reflection mt-10 max-w-sm text-base">{hint}</p>
+    </div>
   );
 }
 

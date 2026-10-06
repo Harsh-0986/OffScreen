@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 
 import { Nav } from "@/components/nav";
 import { EmptyState, ErrorState, Thinking } from "@/components/states";
-import { API_BASE, ApiError, api } from "@/lib/api";
+import { API_BASE, ApiError, abortOnUnmount, api, isAbortError } from "@/lib/api";
 import { useRequireAuth } from "@/lib/auth-context";
 import { THINKING_LINES, type Discovery } from "@/lib/types";
 
@@ -24,14 +24,14 @@ export default function JournalPage() {
       .journal(controller.signal)
       .then((response) => setDiscoveries(response.discoveries))
       .catch((caught) => {
-        if (controller.signal.aborted) return;
+        if (isAbortError(caught) || controller.signal.aborted) return;
         setError(caught instanceof ApiError ? caught.message : "Could not load your journal.");
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
       });
 
-    return () => controller.abort();
+    return () => abortOnUnmount(controller);
   }, [ready]);
 
   return (
@@ -40,7 +40,7 @@ export default function JournalPage() {
       <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-16">
         <p className="eyebrow">Your week outside</p>
 
-        {loading && <Thinking lines={THINKING_LINES} />}
+        {loading && <Thinking lines={THINKING_LINES} title="Opening your journal" />}
 
         {error && !loading && <ErrorState message={error} />}
 

@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 
 import { Nav } from "@/components/nav";
 import { ErrorState, Thinking } from "@/components/states";
-import { ApiError, api } from "@/lib/api";
+import { ApiError, abortOnUnmount, api, isAbortError } from "@/lib/api";
 import { useRequireAuth } from "@/lib/auth-context";
 import { THINKING_LINES, type Challenge } from "@/lib/types";
 
@@ -33,14 +33,14 @@ export default function TodayPage() {
         setNote(response.personalization_note);
       })
       .catch((caught) => {
-        if (controller.signal.aborted) return;
+        if (isAbortError(caught) || controller.signal.aborted) return;
         setError(caught instanceof ApiError ? caught.message : "Could not load today's challenge.");
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoaded(true);
       });
 
-    return () => controller.abort();
+    return () => abortOnUnmount(controller);
   }, [ready]);
 
   // Keep tomorrow's challenge warm so the morning wait is short.
@@ -52,7 +52,7 @@ export default function TodayPage() {
     <>
       <Nav active="today" />
       <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col justify-center px-6 py-20">
-        {loading && <Thinking lines={THINKING_LINES} />}
+        {loading && <Thinking lines={THINKING_LINES} title="Generating today's discovery" />}
 
         {error && !loading && (
           <ErrorState message={error} onRetry={() => window.location.reload()} />
@@ -116,7 +116,7 @@ function usePrefetchTomorrow(ready: boolean, currentId: string | undefined) {
     }, 4000);
     return () => {
       clearTimeout(timer);
-      controller.abort();
+      abortOnUnmount(controller);
     };
   }, [ready, currentId]);
 }

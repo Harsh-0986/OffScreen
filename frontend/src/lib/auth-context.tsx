@@ -11,8 +11,9 @@ import {
   type ReactNode,
 } from "react";
 
-import { ApiError, api, setToken } from "@/lib/api";
+import { ApiError, abortOnUnmount, api, isAbortError, setToken } from "@/lib/api";
 import type { AuthUser } from "@/lib/types";
+
 
 type AuthState = {
   user: AuthUser | null;
@@ -37,19 +38,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const controller = new AbortController();
 
-    (async () => {
-      try {
-        setUser(await api.me(controller.signal));
-      } catch (error) {
+    // A held promise chain, not a floating async IIFE, so a cancelled request
+    // can never surface as an unhandled rejection.
+    api
+      .me(controller.signal)
+      .then((user) => setUser(user))
+      .catch((error) => {
+        if (isAbortError(error)) return; // unmounted mid-flight, nothing to do
         // A missing or expired token just means "signed out", not an error to show.
         if (error instanceof ApiError && error.status === 401) setToken(null);
         setUser(null);
-      } finally {
-        setLoading(false);
-      }
-    })();
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
 
-    return () => controller.abort();
+    return () => abortOnUnmount(controller);
   }, []);
 
   const adopt = useCallback((response: { token: string; user: AuthUser }) => {

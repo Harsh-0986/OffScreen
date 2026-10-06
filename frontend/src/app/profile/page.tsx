@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 
 import { Nav } from "@/components/nav";
 import { ErrorState } from "@/components/states";
-import { ApiError, api } from "@/lib/api";
+import { ApiError, abortOnUnmount, api, isAbortError } from "@/lib/api";
 import { useAuth, useRequireAuth } from "@/lib/auth-context";
 import type { Profile } from "@/lib/types";
 
@@ -30,11 +30,11 @@ export default function ProfilePage() {
         setName(loaded.display_name);
       })
       .catch((caught) => {
-        if (controller.signal.aborted) return;
+        if (isAbortError(caught) || controller.signal.aborted) return;
         setError(caught instanceof ApiError ? caught.message : "Could not load your profile.");
       });
 
-    return () => controller.abort();
+    return () => abortOnUnmount(controller);
   }, [ready]);
 
   async function saveName(event: React.FormEvent) {
