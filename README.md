@@ -67,8 +67,8 @@ Then edit `.env`:
 
 ```bash
 cd backend
-uv venv && uv pip install -r requirements.txt     # or: python -m venv .venv && pip install -r requirements.txt
-.venv/bin/uvicorn app.main:app --reload --port 8000
+uv sync                                          # creates .venv and installs everything
+uv run uvicorn app.main:app --reload --port 8000
 ```
 
 Verify: <http://localhost:8000/health> → `{"status":"ok"}`
@@ -87,9 +87,14 @@ Open <http://localhost:3000>, create an account, and go outside.
 ## Tests
 
 ```bash
-cd backend && .venv/bin/python -m pytest      # 162 tests, offline
+cd backend && uv run pytest                  # 162 tests, offline
+cd backend && uv run ruff check app tests
 cd frontend && pnpm lint && pnpm build
 ```
+
+`uv sync` installs from `backend/pyproject.toml` and `backend/uv.lock`, including
+the project itself, so `import app` works from any directory. `uv add <pkg>` and
+`uv add --dev <pkg>` are the only supported way to change dependencies.
 
 Every backend test runs against an in-memory SQLite database and a stubbed model,
 so the suite makes no network calls and never touches your real database.
