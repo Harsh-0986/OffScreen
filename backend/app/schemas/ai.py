@@ -80,3 +80,7 @@ class DiscoveryFeedback(BaseModel):
     title: str = Field(min_length=1, max_length=80)
     reflection: str = Field(min_length=1, max_length=400)
     tagline: str = Field(default="", max_length=80)
+
+
+class DiscoveryJudgment(PhotoAnalysis, DiscoveryEvaluation):
+    """Everything one multimodal call returns: description plus evaluation (SPEC §43)."""

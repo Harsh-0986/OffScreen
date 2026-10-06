@@ -176,6 +176,7 @@ def add_discovery(
         ai_reasoning=extra.get("ai_reasoning", ""),
         interesting_detail=extra.get("interesting_detail", ""),
         visual_description=extra.get("visual_description", ""),
+        tagline=extra.get("tagline", "")[:80],
     )
     session.add(discovery)
 

@@ -34,6 +34,7 @@ class Discovery(Base):
     ai_reasoning: Mapped[str] = mapped_column(Text, default="")
     interesting_detail: Mapped[str] = mapped_column(Text, default="")
     visual_description: Mapped[str] = mapped_column(Text, default="")
+    tagline: Mapped[str] = mapped_column(String(80), default="")
     points_awarded: Mapped[int] = mapped_column(Integer, default=0)
 
     created_at: Mapped[datetime] = mapped_column(
@@ -57,6 +58,7 @@ class Discovery(Base):
             "ai_feedback": self.ai_feedback,
             "interesting_detail": self.interesting_detail,
             "visual_description": self.visual_description,
+            "tagline": self.tagline,
             "points_awarded": self.points_awarded,
             "created_at": self.created_at.isoformat(),
         }

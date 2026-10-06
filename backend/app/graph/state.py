@@ -19,6 +19,8 @@ class DiscoveryState(TypedDict, total=False):
     recent_discoveries: list[str]
     context_date: str
 
+    challenge_id: str
+
     image_path: str
     image_mime_type: str
 

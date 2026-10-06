@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.challenge_routes import router as challenges_router
+from app.api.discovery_routes import router as discoveries_router
 from app.api.photo_routes import router as photos_router
 from app.api.test_routes import router as test_router
 from app.config import get_settings
@@ -41,6 +42,7 @@ app.add_middleware(
 app.include_router(test_router)
 app.include_router(challenges_router)
 app.include_router(photos_router)
+app.include_router(discoveries_router)
 
 # Uploaded photographs are served from here so the journal can display them.
 settings.upload_path.mkdir(parents=True, exist_ok=True)
