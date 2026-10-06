@@ -1,26 +1,103 @@
 @import "tailwindcss";
 
+/*
+  Outside, Not Online — design tokens (SPEC §21).
+
+  The app is meant to recede: warm paper, near-black ink, one mossy accent.
+  The photographs carry all the colour; nothing here competes with them.
+*/
+
+@theme {
+  --color-paper: #faf8f4;
+  --color-paper-raised: #ffffff;
+  --color-ink: #16150f;
+  --color-ink-soft: #57544a;
+  --color-ink-faint: #8b877b;
+  --color-line: #e4dfd4;
+  --color-moss: #486b3f;
+  --color-moss-soft: #eaf0e6;
+  --color-clay: #a8613a;
+  --color-clay-soft: #f6ece5;
+
+  --font-display: var(--font-display-face), Georgia, serif;
+  --font-body: var(--font-body-face), Georgia, serif;
+
+  --radius-card: 2px;
+}
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --paper: #faf8f4;
+  --ink: #16150f;
+  color-scheme: light;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  background: var(--paper);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body-face), Georgia, "Times New Roman", serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Big statements are set in the heavy grotesque; everything quiet stays serif. */
+.font-display {
+  font-family: var(--font-display-face), "Helvetica Neue", Arial, sans-serif;
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  line-height: 0.92;
+}
+
+.eyebrow {
+  font-family: var(--font-display-face), "Helvetica Neue", Arial, sans-serif;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--color-ink-faint);
+}
+
+.reflection {
+  font-family: var(--font-body-face), Georgia, serif;
+  font-style: italic;
+  color: var(--color-ink-soft);
+}
+
+/* Photography always reads as a physical print. */
+.photo-frame {
+  box-shadow:
+    0 1px 0 rgba(0, 0, 0, 0.04),
+    0 12px 32px -12px rgba(22, 21, 15, 0.28);
+}
+
+input,
+textarea,
+button {
+  font: inherit;
+}
+
+input:focus-visible,
+textarea:focus-visible,
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--color-moss);
+  outline-offset: 2px;
+}
+
+/* Photos are content, not decoration. */
+img {
+  display: block;
+  max-width: 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }
