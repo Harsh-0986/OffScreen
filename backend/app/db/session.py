@@ -16,6 +16,7 @@ from pathlib import Path
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from app.config import get_settings
 from app.db.base import Base
@@ -71,9 +72,19 @@ def get_db() -> Iterator[Session]:
 
 
 def reset_engine_for_tests() -> None:
-    """Testing hook — rebind to an in-memory database."""
+    """Testing hook — rebind to an in-memory database.
+
+    `StaticPool` is required: without it SQLAlchemy opens one connection per
+    thread for in-memory SQLite, and TestClient runs the app on a different
+    thread than the test, so the two would see separate databases.
+    """
     global engine, SessionLocal
-    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, future=True)
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+        future=True,
+    )
     SessionLocal.configure(bind=engine)
     Base.metadata.create_all(bind=engine)
 
