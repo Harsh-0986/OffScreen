@@ -75,9 +75,18 @@ cp .env.example .env
 | `UPLOAD_DIR` | Where uploaded photographs are stored |
 | `MAX_IMAGE_BYTES` | Upload cap, default 10 MB |
 | `CORS_ORIGINS` | Comma-separated frontend origins |
-| `NEXT_PUBLIC_API_BASE_URL` | Frontend only; public config, no secrets |
+See [`.env.example`](.env.example) for the backend variables.
 
-See [`.env.example`](.env.example) for the full list.
+**The frontend has its own env file.** Next.js only reads env files from its own
+directory, so the root `.env` above is invisible to it:
+
+```bash
+cd frontend
+cp .env.example .env.local      # then edit NEXT_PUBLIC_API_BASE_URL
+```
+
+`NEXT_PUBLIC_*` values are inlined at **build** time, so restart `pnpm dev` or
+re-run `pnpm build` after changing one.
 
 ### 2. Backend
 

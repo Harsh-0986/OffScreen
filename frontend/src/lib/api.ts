@@ -9,10 +9,24 @@ import type {
 
 /**
  * The API base is public config; the GEMINI_API_KEY never reaches the browser
- * (it lives only in the backend process, SPEC §23).
+ * (it lives only in the backend process).
+ *
+ * NEXT_PUBLIC_ variables are inlined at build time, so this must be set in
+ * frontend/.env.local before `pnpm dev` / `pnpm build`. The root .env is not
+ * read by Next.js.
  */
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ?? "http://localhost:8000";
+const API_BASE = (
+  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ?? "http://localhost:8000"
+);
+
+// A production build silently pointing at localhost is a confusing failure to
+// debug in a browser, so say so loudly once at startup.
+if (process.env.NODE_ENV === "production" && !process.env.NEXT_PUBLIC_API_BASE_URL) {
+  console.warn(
+    "[offscreen] NEXT_PUBLIC_API_BASE_URL is not set; falling back to localhost:8000. " +
+      "Set it in frontend/.env.local and rebuild.",
+  );
+}
 
 const TOKEN_KEY = "ono.token";
 
