@@ -17,13 +17,14 @@ export default function TodayPage() {
   const [challenge, setChallenge] = useState<Challenge | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Starts false and is only set by the request, so no state is written on mount.
+  const [loaded, setLoaded] = useState(false);
+  const loading = !loaded && !error;
 
   useEffect(() => {
     if (!ready) return;
 
     const controller = new AbortController();
-    setLoading(true);
 
     api
       .today(controller.signal)
@@ -36,7 +37,7 @@ export default function TodayPage() {
         setError(caught instanceof ApiError ? caught.message : "Could not load today's challenge.");
       })
       .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
+        if (!controller.signal.aborted) setLoaded(true);
       });
 
     return () => controller.abort();
