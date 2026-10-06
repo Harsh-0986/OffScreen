@@ -1,5 +1,7 @@
 """Outside, Not Online — FastAPI backend."""
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -7,14 +9,23 @@ from fastapi.responses import JSONResponse
 from app.api.challenge_routes import router as challenges_router
 from app.api.test_routes import router as test_router
 from app.config import get_settings
+from app.db.session import init_db
 from app.errors import AppError
 
 settings = get_settings()
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    init_db()
+    yield
+
 
 app = FastAPI(
     title=settings.app_name,
     version="0.1.0",
     description="AI-powered outdoor discovery journal.",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -24,7 +35,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 
 app.include_router(test_router)
 app.include_router(challenges_router)

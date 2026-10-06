@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import date
 
 import pytest
-from fastapi.testclient import TestClient
 
 from app.api.challenge_routes import get_service
 from app.errors import GemmaError
@@ -13,8 +12,6 @@ from app.graph.graph import build_challenge_graph, run_challenge_graph
 from app.graph.nodes import load_context
 from app.main import app
 from app.schemas.ai import ChallengeDraft
-
-client = TestClient(app)
 
 VALID_DRAFT = ChallengeDraft(
     title="Branches With A Face",
@@ -120,7 +117,7 @@ def test_graph_shape_is_linear() -> None:
 # ------------------------------------------------------------------- endpoint
 
 
-def test_generate_endpoint_returns_challenge() -> None:
+def test_generate_endpoint_returns_challenge(client) -> None:
     override(FakeGemma(VALID_DRAFT))
     try:
         body = client.post("/api/challenges/generate", headers={"X-User-Id": _uuid()}).json()
@@ -130,7 +127,7 @@ def test_generate_endpoint_returns_challenge() -> None:
     assert body["challenge"]["estimated_minutes"] == 20
 
 
-def test_generate_endpoint_works_without_a_user_header() -> None:
+def test_generate_endpoint_works_without_a_user_header(client) -> None:
     """A plain curl with no identity still returns a challenge."""
     override(FakeGemma(VALID_DRAFT))
     try:
@@ -140,7 +137,7 @@ def test_generate_endpoint_works_without_a_user_header() -> None:
     assert response.status_code == 200
 
 
-def test_generate_endpoint_rejects_a_bad_user_id() -> None:
+def test_generate_endpoint_rejects_a_bad_user_id(client) -> None:
     override(FakeGemma(VALID_DRAFT))
     try:
         response = client.post("/api/challenges/generate", headers={"X-User-Id": "not-a-uuid"})
@@ -151,7 +148,7 @@ def test_generate_endpoint_rejects_a_bad_user_id() -> None:
     assert "Traceback" not in response.text
 
 
-def test_generate_endpoint_surfaces_model_failure_as_502() -> None:
+def test_generate_endpoint_surfaces_model_failure_as_502(client) -> None:
     override(FakeGemma(error=GemmaError("model unavailable")))
     try:
         response = client.post("/api/challenges/generate")
@@ -165,7 +162,7 @@ def _uuid() -> str:
 
 
 @pytest.mark.parametrize("path", ["/api/challenges/generate", "/api/challenges/today"])
-def test_endpoints_reject_invalid_user_id(path: str) -> None:
+def test_endpoints_reject_invalid_user_id(path: str, client) -> None:
     """Path-traversal style identities are rejected before any lookup."""
     override(FakeGemma(VALID_DRAFT))
     try:
