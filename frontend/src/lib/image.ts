@@ -1,3 +1,5 @@
+import { API_BASE } from "./api";
+
 /**
  * Build a URL for an uploaded photograph.
  *

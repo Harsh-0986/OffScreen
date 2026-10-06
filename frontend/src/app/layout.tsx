@@ -20,9 +20,9 @@ const body = Fraunces({
 });
 
 export const metadata: Metadata = {
-  title: "Outside, Not Online",
+  title: "Offscreen",
   description:
-    "One photo. One discovery. One reason to go outside. An AI-powered outdoor discovery journal.",
+    "A photo walk, one challenge at a time. Offscreen gives you one small outdoor challenge a day — go find it, photograph it, and let Gemma judge what you brought back.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

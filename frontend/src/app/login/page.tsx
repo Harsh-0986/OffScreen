@@ -57,7 +57,7 @@ function LoginForm() {
   return (
     <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-6 py-20">
       <Link href="/" className="eyebrow mb-10 hover:!text-ink-soft">
-        ← Outside, Not Online
+        ← Offscreen
       </Link>
 
       <h1 className="font-display text-5xl tracking-tight">

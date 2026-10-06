@@ -55,7 +55,8 @@ export default function Home() {
 
       <footer className="border-t border-line px-6 py-10 text-sm text-ink-faint sm:px-10">
         <p>
-          Built with Gemma and LangGraph.{" "}
+          <span className="font-display tracking-tight">Offscreen</span> — built with
+          Gemma and LangGraph.{" "}
           <Link href="/login" className="underline underline-offset-4 hover:text-ink">
             Sign in
           </Link>

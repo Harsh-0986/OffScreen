@@ -13,8 +13,8 @@ export function Nav({ active }: { active?: "today" | "journal" | "profile" }) {
 
   return (
     <nav className="flex items-center justify-between border-b border-line px-6 sm:px-10">
-      <Link href="/" className="font-display text-sm tracking-tight">
-        Outside, Not Online
+      <Link href="/" className="font-display text-sm uppercase tracking-tight">
+        Offscreen
       </Link>
 
       <ul className="flex items-center gap-6 sm:gap-9">
