@@ -30,7 +30,8 @@ the world through screens. Offscreen gives people a reason to put the phone down
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System design, both LangGraph graphs, state, and the decisions behind them |
 | [docs/API.md](docs/API.md) | Every endpoint with request/response examples |
 | [docs/TESTING.md](docs/TESTING.md) | Test strategy, how to run it, and the AI test cases that still need real photos |
-| [docs/DEV_SUBMISSION.md](docs/DEV_SUBMISSION.md) | Draft write-up for the DEV submission, with the gaps marked |
+| [docs/DEV_SUBMISSION.md](docs/DEV_SUBMISSION.md) | Paste-ready post for the DEV challenge, with unfilled sections marked |
+| [docs/SUBMISSION_RUNBOOK.md](docs/SUBMISSION_RUNBOOK.md) | How to publish it, plus the verified deployment blockers and checklist |
 | [docs/SECURITY.md](docs/SECURITY.md) | Threat model and what protects what |
 | [SPEC.md](SPEC.md) | The original product and technical specification |
 
