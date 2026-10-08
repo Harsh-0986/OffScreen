@@ -17,6 +17,26 @@ Open app  →  Today's challenge  →  Close the app, go outside  →  Photograp
           →  Gemma looks  →  Score + reflection  →  Journal  →  Come back tomorrow
 ```
 
+## Watch it
+
+**The actual demo** — the real app, real Gemma, real photograph, no cuts or narration:
+
+<video controls width="100%" poster="docs/media/demo-poster.jpg" preload="metadata">
+  <source src="docs/media/demo.mp4" type="video/mp4" />
+  <a href="docs/media/demo.mp4">Download the demo (2.4 MB, 63s)</a>
+</video>
+
+**The 21-second launch cut** — a recreation of the product's screens, rendered from HTML:
+
+<video controls width="100%" poster="docs/media/brag.jpg" preload="metadata">
+  <source src="docs/media/brag.mp4" type="video/mp4" />
+  <a href="docs/media/brag.mp4">Download the launch video (1.1 MB, 21s)</a>
+</video>
+
+The demo is the honest one: the challenge is generated live (~40s on the free
+tier), a real photograph is uploaded, and Gemma scores it for real — including
+the miss, which scores 0/10 and says so.
+
 ## Why it exists
 
 People consume enormous amounts of digital content but increasingly experience
