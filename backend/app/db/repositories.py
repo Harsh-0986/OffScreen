@@ -13,6 +13,7 @@ from datetime import UTC, date, datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.db.base import utcnow
 from app.errors import DuplicateEmailError
 from app.errors import NotFoundError as UserNotFoundError
 from app.models import Challenge, ChallengeStatus, Discovery, User, UserPreference
@@ -201,11 +202,15 @@ def add_discovery(
     )
     session.add(discovery)
 
-    user = session.get(User, user_id)
+    user = get_user(session, user_id)
     if user is not None:
         user.total_points += discovery.points_awarded
         user.discoveries_count += 1
+        user.completed_challenges += 1
         user.outdoor_minutes_estimate += extra.get("minutes", 0)
+        today = datetime.now(UTC).date()
+        user.current_streak = _next_streak(user.current_streak, user.last_discovery_date, today)
+        user.last_discovery_date = today
 
     # Always record the taste signal, even if the profile row is missing, so a
     # discovery never silently loses the user's category weighting.
@@ -214,10 +219,7 @@ def add_discovery(
     challenge = session.get(Challenge, challenge_id)
     if challenge is not None:
         challenge.status = ChallengeStatus.COMPLETED
-        challenge.completed_at = datetime.now(UTC)
-        user = user or session.get(User, user_id)
-        if user is not None and _same_utc_day(challenge.created_at, datetime.now(UTC)):
-            user.current_streak += 1
+        challenge.completed_at = utcnow()
 
     session.commit()
     session.refresh(discovery)
@@ -271,8 +273,19 @@ def get_preferences(session: Session, user_id: str) -> dict[str, float]:
     return {p.category: p.weight for p in session.scalars(stmt)}
 
 
-def _same_utc_day(left: datetime, right: datetime) -> bool:
-    return left.date() == right.date() and left.tzinfo is not None and right.tzinfo is not None
+def _next_streak(current: int, last_date: date | None, today: date | None = None) -> int:
+    """Consecutive-day streak: same day holds, yesterday extends, otherwise resets.
+
+    A naive last_date is read as a calendar date, which is how it is stored.
+    """
+    today = today or datetime.now(UTC).date()
+    if last_date is None:
+        return 1
+    if last_date == today:
+        return max(current, 1)
+    if last_date == today - timedelta(days=1):
+        return current + 1
+    return 1
 
 
 def today() -> date:

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import DateTime, Integer, String
+from sqlalchemy import Date, DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, utcnow
@@ -21,6 +21,8 @@ class User(Base):
     total_points: Mapped[int] = mapped_column(Integer, default=0)
     discoveries_count: Mapped[int] = mapped_column(Integer, default=0)
     current_streak: Mapped[int] = mapped_column(Integer, default=0)
+    # Date of the most recent discovery, for consecutive-day streak tracking.
+    last_discovery_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     completed_challenges: Mapped[int] = mapped_column(Integer, default=0)
     outdoor_minutes_estimate: Mapped[int] = mapped_column(Integer, default=0)
 
@@ -49,6 +51,9 @@ class User(Base):
             "discoveries_count": self.discoveries_count,
             "current_streak": self.current_streak,
             "completed_challenges": self.completed_challenges,
+            "last_discovery_date": (
+                self.last_discovery_date.isoformat() if self.last_discovery_date else None
+            ),
             "outdoor_minutes_estimate": self.outdoor_minutes_estimate,
             "favorite_categories": {p.category: p.weight for p in self.preferences},
         }

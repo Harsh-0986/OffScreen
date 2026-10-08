@@ -284,3 +284,108 @@ def test_discovery_persists_across_sessions(db, user_and_headers) -> None:
     with SessionLocal() as fresh:
         found = fresh.query(Discovery).filter_by(title="Survivor").one()
         assert found.score == 8
+
+
+# ------------------------------------------------- profile counters & streak
+#
+# These round-trip through the database on purpose. The original bugs here were
+# invisible to tests that only used in-memory objects: SQLite returns naive
+# datetimes, so any tz-aware comparison silently failed.
+
+
+def _submit(db, user, *, challenge=None):
+    challenge = challenge or _challenge(db, user_id=user.id)
+    return repo.add_discovery(
+        db,
+        user_id=user.id,
+        challenge_id=challenge.id,
+        image_path="uploads/x.jpg",
+        title="t",
+        description="",
+        score=7,
+        confidence=0.8,
+        category="nature",
+        ai_feedback="",
+    )
+
+
+def test_completed_challenges_is_incremented(db, user_and_headers) -> None:
+    user, _ = user_and_headers
+    _submit(db, user)
+    db.expire_all()
+    assert repo.get_user(db, user.id).completed_challenges == 1
+
+
+def test_streak_starts_at_one(db, user_and_headers) -> None:
+    user, _ = user_and_headers
+    _submit(db, user)
+    db.expire_all()
+    assert repo.get_user(db, user.id).current_streak == 1
+
+
+def test_two_discoveries_on_one_day_hold_the_streak(db, user_and_headers) -> None:
+    user, _ = user_and_headers
+    _submit(db, user)
+    _submit(db, user)
+    db.expire_all()
+    fresh = repo.get_user(db, user.id)
+    assert fresh.current_streak == 1
+    assert fresh.completed_challenges == 2
+
+
+def test_streak_extends_on_a_consecutive_day(db, user_and_headers) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    user, _ = user_and_headers
+    # A real one-day-old streak: yesterday's discovery already made it 1.
+    user.current_streak = 1
+    user.last_discovery_date = datetime.now(UTC).date() - timedelta(days=1)
+    db.commit()
+
+    _submit(db, user)
+    db.expire_all()
+    assert repo.get_user(db, user.id).current_streak == 2
+
+
+def test_streak_resets_after_a_gap(db, user_and_headers) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    user, _ = user_and_headers
+    user.current_streak = 4
+    user.last_discovery_date = datetime.now(UTC).date() - timedelta(days=4)
+    db.commit()
+
+    _submit(db, user)
+    db.expire(user)
+    assert user.current_streak == 1
+
+
+def test_naive_database_dates_do_not_break_the_streak(db, user_and_headers) -> None:
+    """Regression: SQLite returns naive datetimes and tzinfo checks failed."""
+    from datetime import UTC, datetime
+
+    from app.db.base import as_utc
+
+    user, _ = user_and_headers
+    _submit(db, user)
+    db.expire(user)
+    db.commit()
+
+    # Re-read from the database: the value comes back naive from SQLite.
+    db.expire_all()
+    fresh_user = repo.get_user(db, user.id)
+    assert fresh_user is not None
+    raw = fresh_user.last_discovery_date
+    assert raw is not None
+    assert as_utc(datetime.combine(raw, datetime.min.time())) == datetime.combine(
+        raw, datetime.min.time(), tzinfo=UTC
+    )
+
+
+def test_profile_reports_completed_challenges_and_streak(db, user_and_headers) -> None:
+    user, _ = user_and_headers
+    _submit(db, user)
+    profile = repo.get_user_profile(db, user.id)
+    assert profile["completed_challenges"] == 1
+    assert profile["current_streak"] == 1
+    assert profile["discoveries_count"] == 1

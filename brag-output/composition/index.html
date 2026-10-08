@@ -1,0 +1,646 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <title>Offscreen — a photo walk, one challenge at a time</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      /* Self-hosted so no frame depends on a network fetch. */
+      @font-face {
+        font-family: "Inter Tight";
+        src: url("assets/fonts/intertight-NGSnv5HMAFg6IuGlBNMjxJEL2VmU3NS7Z2mjjwiqXA.ttf")
+          format("truetype");
+        font-weight: 800;
+        font-display: block;
+      }
+      @font-face {
+        font-family: "Fraunces";
+        src: url("assets/fonts/fraunces-6NVf8FyLNQOQZAnv9ZwNjucMHVn85Ni7emAe9lKqZTnbB-gzTK0K1ChJdt9vIVYX9G37lvd9sPEKsxx664UJf1hLTf7W.ttf")
+          format("truetype");
+        font-style: italic;
+        font-weight: 400;
+        font-display: block;
+      }
+
+      :root {
+        --paper: #faf8f4;
+        --ink: #16150f;
+        --ink-soft: #57544a;
+        --ink-faint: #8b877b;
+        --line: #e4dfd4;
+        --moss: #486b3f;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: var(--paper);
+        color: var(--ink);
+        font-family: "Fraunces", Georgia, "Times New Roman", serif;
+      }
+
+      /* Root is sized; the background lives on a full-bleed child, never on root. */
+      #root {
+        position: relative;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        font-family: "Fraunces", Georgia, serif;
+      }
+
+      #bg {
+        position: absolute;
+        inset: 0;
+        background: var(--paper);
+        z-index: 0;
+      }
+
+      .clip {
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .display {
+        font-family: "Inter Tight", "Helvetica Neue", Arial, sans-serif;
+        font-weight: 800;
+        letter-spacing: -0.035em;
+        line-height: 0.92;
+        text-transform: uppercase;
+      }
+
+      .eyebrow {
+        font-family: "Inter Tight", "Helvetica Neue", Arial, sans-serif;
+        font-size: 20px;
+        font-weight: 700;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+      }
+
+      .reflection {
+        font-family: "Fraunces", Georgia, serif;
+        font-style: italic;
+        color: var(--ink-soft);
+      }
+
+      /* ---------------------------------------------------------- scene 1 */
+      #s1 {
+        justify-content: center;
+        padding: 0 160px;
+      }
+      #wordmark {
+        font-size: 232px;
+        margin: 0;
+      }
+      #manifesto {
+        font-size: 54px;
+        line-height: 1.35;
+        color: var(--ink-faint);
+        margin: 0;
+        max-width: 1100px;
+        min-height: 74px;
+      }
+      #manifesto #typed {
+        opacity: 1;
+      }
+      #manifesto #typed span {
+        opacity: 0;
+      }
+
+      /* ---------------------------------------------------------- scene 2 */
+      #s2 {
+        justify-content: center;
+        padding: 0 160px;
+      }
+      #prompt {
+        font-size: 104px;
+        line-height: 1.06;
+        margin: 40px 0 0;
+        max-width: 1400px;
+        font-weight: 400;
+      }
+      #meta-row {
+        display: flex;
+        gap: 72px;
+        margin-top: 84px;
+        border-top: 1px solid var(--line);
+        padding-top: 40px;
+        max-width: 1400px;
+      }
+      .meta-item {
+        opacity: 0;
+      }
+      .meta-label {
+        font-family: "Inter Tight", sans-serif;
+        font-size: 19px;
+        font-weight: 700;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+      }
+      .meta-value {
+        font-size: 44px;
+        margin-top: 14px;
+        color: var(--ink);
+      }
+
+      /* ---------------------------------------------------------- scene 3 */
+      #s3 {
+        justify-content: center;
+        align-items: center;
+        text-align: center;
+      }
+      #mission-a {
+        font-size: 128px;
+        margin: 60px 0 0;
+      }
+      #mission-b {
+        font-size: 128px;
+        margin: 18px 0 0;
+      }
+      /* Stacked, pre-built — every frame reproducible from its time value. */
+      #timer {
+        position: relative;
+        width: 220px;
+        height: 46px;
+        margin-top: 66px;
+      }
+      #timer span {
+        position: absolute;
+        inset: 0;
+        opacity: 0;
+        font-family: "Inter Tight", sans-serif;
+        font-size: 26px;
+        font-weight: 700;
+        letter-spacing: 0.22em;
+        color: var(--ink-faint);
+        font-variant-numeric: tabular-nums;
+      }
+      #back-btn {
+        margin-top: 58px;
+        display: inline-block;
+        padding: 26px 76px;
+        border: 2px solid var(--ink);
+        border-radius: 999px;
+        font-family: "Inter Tight", sans-serif;
+        font-size: 26px;
+        font-weight: 700;
+        letter-spacing: 0.15em;
+        color: var(--ink);
+        background: transparent;
+      }
+      #cursor {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 26px;
+        height: 26px;
+        border-radius: 50%;
+        border: 2px solid var(--ink);
+        background: var(--paper);
+        z-index: 5;
+        opacity: 0;
+      }
+
+      /* ---------------------------------------------------------- scene 4 */
+      #s4 {
+        justify-content: center;
+        padding: 0 160px;
+      }
+      #result-row {
+        display: flex;
+        gap: 96px;
+        align-items: center;
+      }
+      #photo {
+        position: relative;
+        width: 520px;
+        border-radius: 2px;
+        height: 520px;
+        flex: none;
+        background: linear-gradient(160deg, #486b3f 0%, #2c3d26 62%, #16150f 100%);
+        box-shadow:
+          0 1px 0 rgba(0, 0, 0, 0.04),
+          0 12px 32px -12px rgba(22, 21, 15, 0.28);
+        opacity: 0;
+      }
+      #photo-stack {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 22px;
+        flex: none;
+      }
+      #photo-caption {
+        font-size: 22px;
+        color: var(--ink-soft);
+        font-style: italic;
+      }
+      #score-block {
+        display: flex;
+        gap: 64px;
+        align-items: center;
+      }
+      #score {
+        position: relative;
+        width: 300px;
+        height: 190px;
+        opacity: 0;
+      }
+      #score span {
+        position: absolute;
+        inset: 0;
+        opacity: 0;
+      }
+      .score-num {
+        font-family: "Inter Tight", sans-serif;
+        font-weight: 800;
+        font-size: 168px;
+        line-height: 1;
+        color: var(--moss);
+        letter-spacing: -0.035em;
+        font-variant-numeric: tabular-nums;
+      }
+      .score-den {
+        font-family: "Inter Tight", sans-serif;
+        font-weight: 800;
+        font-size: 62px;
+        color: var(--ink-faint);
+        letter-spacing: -0.02em;
+        vertical-align: baseline;
+        padding-left: 10px;
+      }
+      #result-copy {
+        max-width: 720px;
+        opacity: 0;
+      }
+      #feedback {
+        font-size: 46px;
+        line-height: 1.32;
+        margin: 0;
+      }
+      #points {
+        margin: 34px 0 0;
+        opacity: 0;
+      }
+      #journal-strip {
+        display: flex;
+        gap: 40px;
+        margin-top: 84px;
+        opacity: 0;
+      }
+      .thumb {
+        width: 236px;
+        height: 236px;
+        box-shadow:
+          0 1px 0 rgba(0, 0, 0, 0.04),
+          0 10px 26px -12px rgba(22, 21, 15, 0.26);
+      }
+      #journal-strip .thumb {
+        opacity: 0;
+      }
+      #finale {
+        z-index: 6;
+        background: var(--paper);
+      }
+      #finale-inner {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        text-align: center;
+        padding: 0 200px;
+      }
+      #final-line {
+        font-size: 76px;
+        line-height: 1.24;
+        max-width: 1320px;
+        margin: 0;
+      }
+      #final-sign {
+        margin-top: 52px;
+        font-family: "Inter Tight", sans-serif;
+        font-size: 22px;
+        font-weight: 700;
+        letter-spacing: 0.28em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="main"
+      data-start="0"
+      data-width="1920"
+      data-height="1080"
+      data-duration="21"
+    >
+      <div id="bg"></div>
+
+      <!-- Scene 1 · Hook · 0.0–4.5 -->
+      <section id="s1" class="clip" data-start="0" data-duration="4.5" data-track-index="1">
+        <h1 id="wordmark" class="display">Offscreen</h1>
+        <p id="manifesto" class="reflection"><span id="typed"></span></p>
+      </section>
+
+      <!-- Scene 2 · Today's discovery · 4.5–9.0 -->
+      <section id="s2" class="clip" data-start="4.5" data-duration="4.5" data-track-index="2">
+        <p class="eyebrow">Today's discovery</p>
+        <h2 id="prompt">Find something that looks like a face.</h2>
+        <div id="meta-row">
+          <div class="meta-item" id="meta1">
+            <div class="meta-label">About</div>
+            <div class="meta-value">~20 min</div>
+          </div>
+          <div class="meta-item" id="meta2">
+            <div class="meta-label">Difficulty</div>
+            <div class="meta-value">2 / 4</div>
+          </div>
+          <div class="meta-item" id="meta3">
+            <div class="meta-label">Looking for</div>
+            <div class="meta-value">Nature</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Scene 3 · Mission mode · 9.0–13.0 -->
+      <section id="s3" class="clip" data-start="9" data-duration="4" data-track-index="3">
+        <p class="eyebrow">Mission started</p>
+        <h2 id="mission-a" class="display">Close this app.</h2>
+        <h2 id="mission-b" class="display">Go outside.</h2>
+        <div id="timer">
+          <span>00:00</span>
+          <span>00:01</span>
+          <span>00:02</span>
+          <span>00:03</span>
+          <span>00:04</span>
+        </div>
+        <div id="back-btn">I'm back</div>
+      </section>
+
+      <!-- Scene 4 · Result → journal → final line · 13.0–21.0 -->
+      <section id="s4" class="clip" data-start="13" data-duration="8" data-track-index="4">
+        <div id="result-row">
+          <div id="photo-stack">
+            <div id="photo"></div>
+            <span id="photo-caption" class="reflection">the photograph you brought back</span>
+          </div>
+          <div>
+            <div id="score-block">
+              <div id="score"></div>
+              <span class="score-den">/10</span>
+            </div>
+            <div id="result-copy">
+              <p id="feedback" class="reflection">
+                You found it. The branches really do resemble a face.
+              </p>
+              <p id="points" class="eyebrow">+9 discovery points</p>
+            </div>
+          </div>
+        </div>
+        <div id="journal-strip">
+          <div class="thumb" style="background: linear-gradient(160deg, #486b3f, #16150f)"></div>
+          <div class="thumb" style="background: linear-gradient(160deg, #8b877b, #57544a)"></div>
+          <div class="thumb" style="background: linear-gradient(160deg, #a8613a, #2c3d26)"></div>
+        </div>
+      </section>
+
+      <!-- Final line overlays scene 4's tail; sits above it, same track family. -->
+      <section id="finale" class="clip" data-start="18.1" data-duration="2.9" data-track-index="5">
+        <div id="finale-inner" data-layout-allow-occlusion>
+          <p id="final-line" class="reflection">Come back tomorrow. Until then, go outside.</p>
+          <p id="final-sign">Offscreen</p>
+        </div>
+      </section>
+
+      <div id="cursor"></div>
+
+      <!-- Media must be direct children of the root. -->
+      <audio
+        id="music"
+        src="assets/music/happy-beats-business-moves-vol-1-by-ende-dot-app.mp3"
+        data-start="0"
+        data-duration="21"
+        data-track-index="10"
+        data-volume="0.16"
+      ></audio>
+      <audio
+        id="sfx-meta1"
+        src="assets/sfx/click_002.ogg"
+        data-start="6.52"
+        data-duration="0.4"
+        data-track-index="11"
+        data-volume="0.5"
+      ></audio>
+      <audio
+        id="sfx-meta2"
+        src="assets/sfx/click_002.ogg"
+        data-start="7.02"
+        data-duration="0.4"
+        data-track-index="12"
+        data-volume="0.5"
+      ></audio>
+      <audio
+        id="sfx-meta3"
+        src="assets/sfx/click_002.ogg"
+        data-start="7.52"
+        data-duration="0.4"
+        data-track-index="13"
+        data-volume="0.5"
+      ></audio>
+      <audio
+        id="sfx-press"
+        src="assets/sfx/select_008.ogg"
+        data-start="12.55"
+        data-duration="0.5"
+        data-track-index="14"
+        data-volume="0.45"
+      ></audio>
+      <audio
+        id="sfx-tick"
+        src="assets/sfx/click1.ogg"
+        data-start="15.5"
+        data-duration="1.7"
+        data-track-index="15"
+        data-volume="0.4"
+      ></audio>
+      <audio
+        id="sfx-settle"
+        src="assets/sfx/switch_004.ogg"
+        data-start="18.02"
+        data-duration="0.6"
+        data-track-index="16"
+        data-volume="0.35"
+      ></audio>
+    </div>
+
+    <script>
+      /* ---------------------------------------------------------------
+         Build the two things a timer/counter would normally produce:
+         pre-built stacked elements, so any frame is a pure function of
+         its time value. No clocks, no randomness, no callbacks.
+      ---------------------------------------------------------------- */
+      const typed = document.getElementById("typed");
+      typed.innerHTML = "The goal was never to keep you in the app."
+        .split("")
+        .map((ch) => (ch === " " ? "<span> </span>" : `<span>${ch}</span>`))
+        .join("");
+
+      const timer = document.querySelectorAll("#timer span");
+      const score = document.getElementById("score");
+      score.innerHTML = Array.from({ length: 10 }, (_, n) => {
+        return `<span class="score-num">${n}</span>`;
+      }).join("");
+
+      const scoreDigits = score.querySelectorAll("span");
+      const thumbs = document.querySelectorAll("#journal-strip .thumb");
+
+      /* One paused timeline, built synchronously, key matches the root id. */
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      /* ---------------------------------------------------- scene 1: hook */
+      // Nothing moves for the first beat. The stillness is the joke.
+      tl.fromTo(
+        "#wordmark",
+        { opacity: 0, y: 18 },
+        { opacity: 1, y: 0, duration: 0.9, ease: "power2.out" },
+        0.35,
+      );
+      // Typed on, then held ~2.5s settled (reading floor for a 8-word line).
+      tl.set(typed.querySelectorAll("span"), { opacity: 0 }, 1.5);
+      tl.to(
+        typed.querySelectorAll("span"),
+        { opacity: 1, duration: 0.12, stagger: 0.022 },
+        1.6,
+      );
+
+      /* --------------------------------------------- scene 2: the challenge */
+      tl.fromTo(
+        "#s2 .eyebrow",
+        { opacity: 0 },
+        { opacity: 1, duration: 0.5 },
+        4.7,
+      );
+      tl.fromTo(
+        "#prompt",
+        { opacity: 0, y: 14 },
+        { opacity: 1, y: 0, duration: 0.8, ease: "power2.out" },
+        5.1,
+      );
+      // beat-grid: meta 1 at 6.52s, meta 2 at 7.02s, meta 3 at 7.52s
+      // Short labels, then all three hold together for the rest of the scene.
+      tl.fromTo("#meta1", { opacity: 0 }, { opacity: 1, duration: 0.28 }, 6.52);
+      tl.fromTo("#meta2", { opacity: 0 }, { opacity: 1, duration: 0.28 }, 7.02);
+      tl.fromTo("#meta3", { opacity: 0 }, { opacity: 1, duration: 0.28 }, 7.52);
+
+      /* ------------------------------------------------ scene 3: mission */
+      tl.fromTo("#s3 .eyebrow", { opacity: 0 }, { opacity: 1, duration: 0.4 }, 9.1);
+      tl.fromTo(
+        "#mission-a",
+        { opacity: 0, y: 22 },
+        { opacity: 1, y: 0, duration: 0.7, ease: "power2.out" },
+        9.35,
+      );
+      tl.fromTo(
+        "#mission-b",
+        { opacity: 0, y: 22 },
+        { opacity: 1, y: 0, duration: 0.7, ease: "power2.out" },
+        9.75,
+      );
+      // Timer steps once a second, pre-built elements only.
+      tl.set(timer, { opacity: 0 }, 9.0);
+      [9.0, 10.0, 11.0, 12.0, 13.0].forEach((t, i) => {
+        tl.set(timer[i], { opacity: 1 }, t);
+        if (i < timer.length - 1) tl.set(timer[i], { opacity: 0 }, t + 1);
+      });
+
+      tl.fromTo("#back-btn", { opacity: 0 }, { opacity: 1, duration: 0.5 }, 10.2);
+      // One cursor, one press. Button centre ≈ x 960, y 872 in page space.
+      // Target derived from the button's real box: the hardcoded guess missed it.
+      const btnBox = document.getElementById("back-btn").getBoundingClientRect();
+      // Aim at the button's lower edge rather than dead centre, so the pointer
+      // never sits on top of the label text.
+      const btnX = btnBox.left + btnBox.width / 2 - 13;
+      const btnY = btnBox.top + btnBox.height - 4;
+      tl.fromTo("#cursor", { opacity: 0 }, { opacity: 1, duration: 0.3 }, 11.3);
+      tl.to("#cursor", { x: btnX, y: btnY, duration: 1.0, ease: "power2.inOut" }, 11.35);
+      tl.to("#cursor", { scale: 0.72, duration: 0.1 }, 12.45);
+      tl.to("#cursor", { scale: 1, duration: 0.18, ease: "back.out(2)" }, 12.58);
+
+      /* ------------------------------------------------- scene 4: result */
+      tl.fromTo("#photo", { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.8 }, 13.3);
+      tl.fromTo("#score", { opacity: 0 }, { opacity: 1, duration: 0.3 }, 15.5);
+
+      // beat-locked: 17.02s — count-up completes on a strong cue.
+      // Ten pre-built digits, 0→9, switched every ~0.15s from 15.50.
+      tl.set(scoreDigits, { opacity: 0 }, 15.5);
+      // Each digit is shown from its own time and hidden at the next one, so
+      // exactly one is ever visible.
+      const scoreTimes = [15.5, 15.65, 15.8, 15.95, 16.1, 16.25, 16.4, 16.55, 16.7, 17.02];
+      scoreDigits.forEach((digit, i) => {
+        tl.set(digit, { opacity: 1 }, scoreTimes[i]);
+        if (i < scoreDigits.length - 1) tl.set(digit, { opacity: 0 }, scoreTimes[i + 1]);
+      });
+
+      tl.fromTo(
+        "#result-copy",
+        { opacity: 0, y: 12 },
+        { opacity: 1, y: 0, duration: 0.7, ease: "power2.out" },
+        17.3,
+      );
+      tl.fromTo("#points", { opacity: 0 }, { opacity: 1, duration: 0.5 }, 18.3);
+
+      // beat-locked: 18.02s — journal strip settles on the next strong cue.
+      // (Placed before the points line lands so the strip reads as settled.)
+      tl.fromTo(
+        thumbs,
+        { opacity: 0 },
+        { opacity: 1, duration: 0.3, stagger: 0.22, overwrite: "auto" },
+        18.02,
+      );
+
+      /* ------------------------------------------------- the closing line */
+      // The result scene fades down under a full-bleed paper panel, so the
+      // closing line lands on clean paper with nothing behind it.
+      // Fade the result content out first so the closing line lands on clean
+      // paper rather than on top of a hidden panel.
+      tl.to("#result-row", { opacity: 0, duration: 0.45, ease: "power1.in" }, 17.75);
+      tl.to("#journal-strip", { opacity: 0, duration: 0.45, ease: "power1.in" }, 17.75);
+      tl.fromTo(
+        "#finale-inner",
+        { opacity: 0 },
+        { opacity: 1, duration: 0.7, ease: "power2.out" },
+        18.1,
+      );
+      // The cursor leaves with mission mode; it must not float over the result.
+      tl.to("#cursor", { opacity: 0, duration: 0.4 }, 12.95);
+      tl.fromTo(
+        "#final-line",
+        { opacity: 0, y: 12 },
+        { opacity: 1, y: 0, duration: 0.8, ease: "power2.out" },
+        18.3,
+      );
+      tl.fromTo("#final-sign", { opacity: 0 }, { opacity: 1, duration: 0.6 }, 19.2);
+      // Holds ~1.8s settled before the video ends at 21.0s.
+
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>

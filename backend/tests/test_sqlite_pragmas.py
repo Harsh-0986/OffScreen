@@ -46,9 +46,7 @@ def test_two_connections_coexist(temp_db) -> None:
         assert third.exec_driver_sql("SELECT count(*) FROM t").scalar() == 1
 
 
-def test_locked_database_does_not_break_connecting(
-    temp_db, monkeypatch, caplog
-) -> None:
+def test_locked_database_does_not_break_connecting(temp_db, monkeypatch, caplog) -> None:
     """A second process holding an exclusive lock must not stop us connecting."""
     db_session.init_db()
 
